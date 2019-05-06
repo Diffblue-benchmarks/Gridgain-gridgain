@@ -19,6 +19,7 @@ import org.h2.expression.Expression;
 import org.h2.expression.ExpressionColumn;
 import org.h2.expression.condition.Comparison;
 import org.h2.expression.condition.ConditionAndOr;
+import org.h2.index.HashJoinIndex;
 import org.h2.index.Index;
 import org.h2.index.IndexCondition;
 import org.h2.index.IndexCursor;
@@ -305,6 +306,10 @@ public class TableFilter implements ColumnResolver {
      * can not be used, and optimize the conditions.
      */
     public void prepare() {
+        if (index.getClass() == HashJoinIndex.class) {
+            ((HashJoinIndex)index).build(session, masks);
+        }
+
         // forget all unused index conditions
         // the indexConditions list may be modified here
         for (int i = 0; i < indexConditions.size(); i++) {
@@ -319,6 +324,7 @@ public class TableFilter implements ColumnResolver {
                 }
             }
         }
+
         if (nestedJoin != null) {
             if (nestedJoin == this) {
                 DbException.throwInternalError("self join");

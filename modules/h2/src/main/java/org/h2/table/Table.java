@@ -23,6 +23,7 @@ import org.h2.engine.Session;
 import org.h2.engine.UndoLogRecord;
 import org.h2.expression.Expression;
 import org.h2.expression.ExpressionVisitor;
+import org.h2.index.HashJoinIndex;
 import org.h2.index.Index;
 import org.h2.index.IndexType;
 import org.h2.message.DbException;
@@ -279,6 +280,11 @@ public abstract class Table extends SchemaObjectBase {
      */
     public Index getIndex(String indexName) {
         ArrayList<Index> indexes = getIndexes();
+
+        if ("HASH_JOIN".equalsIgnoreCase(indexName)) {
+            return new HashJoinIndex(this);
+        }
+
         if (indexes != null) {
             for (Index index : indexes) {
                 if (index.getName().equals(indexName)) {
@@ -743,8 +749,17 @@ public abstract class Table extends SchemaObjectBase {
             t.debug("Table      :     potential plan item cost {0} index {1}",
                     item.cost, item.getIndex().getPlanSQL());
         }
-        ArrayList<Index> indexes = getIndexes();
+
+        ArrayList<Index> indexes = getIndexes() == null ? null : new ArrayList<>(getIndexes());
         IndexHints indexHints = getIndexHints(filters, filter);
+
+        if (indexes != null
+            && filters != null
+            && filters.length > 1
+            && session.isHashJoinEnabled()
+            && HashJoinIndex.isApplicable(session, this, masks)) {
+            indexes.add(getIndex("HASH_JOIN"));
+        }
 
         if (indexes != null && masks != null) {
             for (int i = 1, size = indexes.size(); i < size; i++) {

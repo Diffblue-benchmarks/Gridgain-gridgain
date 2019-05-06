@@ -168,6 +168,9 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
      */
     private BitSet idsToRelease;
 
+    /** Enable HASH_JOIN fake index. */
+    private boolean hashJoinEnabled = true;
+
     public Session(Database database, User user, int id) {
         this.database = database;
         this.queryTimeout = database.getSettings().maxQueryTimeout;
@@ -1896,6 +1899,14 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public void setColumnNamerConfiguration(ColumnNamerConfiguration columnNamerConfiguration) {
         this.columnNamerConfiguration = columnNamerConfiguration;
+    }
+
+    public boolean isHashJoinEnabled() {
+        return hashJoinEnabled;
+    }
+
+    public void setHashJoinEnabled(boolean enable) {
+        hashJoinEnabled = enable;
     }
 
     @Override

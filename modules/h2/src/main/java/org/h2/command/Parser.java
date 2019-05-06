@@ -1907,8 +1907,13 @@ public class Parser {
         if (!readIf(CLOSE_PAREN)) {
             do {
                 String indexName = readIdentifierWithSchema();
-                Index index = table.getIndex(indexName);
-                indexNames.add(index.getName());
+                if ("HASH_JOIN".equalsIgnoreCase(indexName)) {
+                    indexNames.add("HASH_JOIN");
+                }
+                else {
+                    Index index = table.getIndex(indexName);
+                    indexNames.add(index.getName());
+                }
             } while (readIfMore(true));
         }
         return IndexHints.createUseIndexHints(indexNames);
