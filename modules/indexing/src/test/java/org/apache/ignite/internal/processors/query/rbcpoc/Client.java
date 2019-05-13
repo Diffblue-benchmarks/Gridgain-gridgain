@@ -23,12 +23,24 @@ public class Client {
             String sql = "SELECT  *\n" +
                 "FROM    RISK R, TRADE T, BATCH B \n" +
                 "WHERE    R.BATCHKEY = B.BATCHKEY\n" +
-                "AND R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
-                "AND    R.TRADEVERSION = T.TRADEVERSION\n" +
-                "AND    T.BOOK = 'RBCEUR0'\n" +
-                "AND B.ISLATEST = TRUE;";
+                "AND      R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
+                "AND      R.TRADEVERSION = T.TRADEVERSION\n" +
+                "AND      T.BOOK = 'RBCEUR0'\n" +
+                "AND      B.ISLATEST = TRUE;";
 
             runSql(ignite, sql, false);
+        });
+
+        System.out.println(">>>> Benchmarking query B -> T -> R...");
+        benchmark(() -> {
+            String sql = "SELECT  *\n" +
+                "FROM BATCH B, TRADE T, RISK R\n" +
+                "WHERE    R.BATCHKEY = B.BATCHKEY\n" +
+                "AND      R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
+                "AND      R.TRADEVERSION = T.TRADEVERSION\n" +
+                "AND      T.BOOK = 'RBCEUR0'\n" +
+                "AND      B.ISLATEST = TRUE;";
+            runSql(ignite, sql, true);
         });
 
         System.out.println(">>>> Benchmarking hash join...");
@@ -36,10 +48,23 @@ public class Client {
             String sql = "SELECT  *\n" +
                 "FROM    TRADE T, RISK R, BATCH B USE INDEX(HASH_JOIN) \n" +
                 "WHERE    R.BATCHKEY = B.BATCHKEY\n" +
-                "AND R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
-                "AND    R.TRADEVERSION = T.TRADEVERSION\n" +
-                "AND    T.BOOK = 'RBCEUR0'\n" +
-                "AND B.ISLATEST = TRUE;";
+                "AND      R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
+                "AND      R.TRADEVERSION = T.TRADEVERSION\n" +
+                "AND      T.BOOK = 'RBCEUR0'\n" +
+                "AND      B.ISLATEST = TRUE;";
+
+            runSql(ignite, sql, true);
+        });
+
+        System.out.println(">>>> Benchmarking TWO hash join...");
+        benchmark(() -> {
+            String sql = "SELECT  *\n" +
+                "FROM    TRADE T, RISK R USE INDEX(HASH_JOIN), BATCH B USE INDEX(HASH_JOIN) \n" +
+                "WHERE    R.BATCHKEY = B.BATCHKEY\n" +
+                "AND      R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
+                "AND      R.TRADEVERSION = T.TRADEVERSION\n" +
+                "AND      T.BOOK = 'RBCEUR0'\n" +
+                "AND      B.ISLATEST = TRUE;";
 
             runSql(ignite, sql, true);
         });
@@ -48,23 +73,13 @@ public class Client {
         benchmark(() -> {
             String sql = "SELECT    *\n" +
                 "FROM    RISK R, TRADE T\n" +
-                "WHERE   R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
-                "AND     R.TRADEVERSION = T.TRADEVERSION\n" +
-                "AND     T.BOOK = 'RBCEUR0';";
+                "WHERE    R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
+                "AND      R.TRADEVERSION = T.TRADEVERSION\n" +
+                "AND      T.BOOK = 'RBCEUR0'\n";
+
             runSql(ignite, sql, false);
         });
 
-//        System.out.println(">>>> Benchmarking query T -> B -> R...");
-//        benchmark(() -> {
-//            String sql = "SELECT  *\n" +
-//                "FROM TRADE T, BATCH B, RISK R\n" +
-//                "WHERE T.BOOK = 'RBCEUR0'\n" +
-//                "    AND B.ISLATEST = TRUE\n" +
-//                "    AND R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
-//                "    AND R.TRADEVERSION = T.TRADEVERSION\n" +
-//                "    AND R.BATCHKEY = B.BATCHKEY";
-//            runSql(ignite, sql, true);
-//        });
 //
 //        System.out.println(">>>> Benchmarking query B -> T -> R...");
 //        benchmark(() -> {

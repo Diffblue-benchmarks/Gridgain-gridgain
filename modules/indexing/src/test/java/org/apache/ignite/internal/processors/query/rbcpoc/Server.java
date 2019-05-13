@@ -1,14 +1,12 @@
 package org.apache.ignite.internal.processors.query.rbcpoc;
 
-import org.apache.ignite.IgniteCheckedException;
+import java.util.Collections;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.configuration.DataRegionConfiguration;
 import org.apache.ignite.configuration.DataStorageConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.spi.discovery.tcp.TcpDiscoverySpi;
 import org.apache.ignite.spi.discovery.tcp.ipfinder.vm.TcpDiscoveryVmIpFinder;
-
-import java.util.Collections;
 
 public class Server {
     public static void main(String[] args) {

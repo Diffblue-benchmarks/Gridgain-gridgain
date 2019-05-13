@@ -30,6 +30,7 @@ import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.SqlFieldsQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.processors.cache.index.AbstractIndexingCommonTest;
+import org.apache.ignite.internal.util.GridDebug;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.testframework.GridTestUtils;
 import org.h2.result.LazyResult;
@@ -41,7 +42,7 @@ import org.junit.Test;
  */
 public class HashJoinQueryTest extends AbstractIndexingCommonTest {
     /** Keys counts at the RIGHT table. */
-    private static final int RIGHT_CNT = 5000;
+    private static final int RIGHT_CNT = 1000;
 
     /** Keys counts at the LEFT table. */
     private static final int LEFT_CNT = RIGHT_CNT * 500;
@@ -83,7 +84,7 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
             .setCacheMode(CacheMode.REPLICATED)
             .setName("C")
             .setSqlSchema("TEST")
-            .setQueryEntities(Collections.singleton(new QueryEntity(Long.class.getName(), "B_VAL")
+            .setQueryEntities(Collections.singleton(new QueryEntity(Long.class.getName(), "C_VAL")
                 .setTableName("C")
                 .addQueryField("ID", Long.class.getName(), null)
                 .addQueryField("A_JID", Long.class.getName(), null)
@@ -115,7 +116,7 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
                 .build());
 
         for (long i = 0; i < RIGHT_CNT; ++i)
-            cacheC.put(i, grid(0).binary().builder("B_VAL")
+            cacheC.put(i, grid(0).binary().builder("C_VAL")
                 .setField("A_JID", i)
                 .setField("VAL0", "val" + i)
                 .build());
@@ -139,22 +140,32 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
 //        enforceJoinOrder = true;
 //        run("SELECT * FROM A, B USE INDEX(HASH_JOIN), C USE INDEX(HASH_JOIN) " +
 //            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
+
+        int cnt = 0;
+
         while (true) {
             enforceJoinOrder = true;
             long t0 = U.currentTimeMillis();
 
             for (int i = 0; i < 1; ++i)
                 run("SELECT * FROM A, B USE INDEX(HASH_JOIN), C USE INDEX(HASH_JOIN) " +
-                    "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
+                    "WHERE A.JID = B.ID AND A.JID=C.ID");
+//            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
             enforceJoinOrder = false;
             long t1 = U.currentTimeMillis();
 
             for (int i = 0; i < 1; ++i)
                 run("SELECT * FROM A, B, C " +
-                    "WHERE A.JID = B.A_JID AND A.JID=C.A_JID AND B.ID=C.ID");
+                    "WHERE A.JID = B.ID AND A.JID=C.ID");
+//            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
             log.info("+++ HASH=" + (t1-t0) + ", LOOP=" + (U.currentTimeMillis() - t1));
+
+            if (cnt % 10 == 0)
+                GridDebug.dumpHeap(String.format("hashj%03d.hprof", cnt / 10), true);
+
+            cnt++;
         }
     }
 

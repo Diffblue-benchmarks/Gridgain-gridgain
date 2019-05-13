@@ -2,6 +2,7 @@ package org.apache.ignite.internal.processors.query.rbcpoc;
 
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
+import org.apache.ignite.IgniteDataStreamer;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.binary.BinaryObjectBuilder;
@@ -25,7 +26,7 @@ public class Loader {
     private static final String SQL_PUBLIC_BATCH_ONHEAP = "BATCH_ONHEAP_CACHE";
     private static final String SQL_PUBLIC_TRADE = "TRADE_CACHE";
     private static final String SQL_PUBLIC_RISK = "RISK_CACHE";
-    public static final int RISKS = 25_000_000; // TODO: /100
+    public static final int RISKS = 20_000_000 / 10; // TODO: /100
     public static final int TRADES = 50_000; // TODO: /100
     public static final int BOOKS = 5;
     public static final int BATCHES = 100;
@@ -82,42 +83,63 @@ public class Loader {
     }
 
     private static void fill(Ignite ignite) {
-        IgniteCache<BinaryObject, BinaryObject> tradeCache = ignite.cache(SQL_PUBLIC_TRADE).withKeepBinary();
-        IgniteCache<BinaryObject, BinaryObject> riskCache = ignite.cache(SQL_PUBLIC_RISK).withKeepBinary();
-        IgniteCache<BinaryObject, BinaryObject> batchCache = ignite.cache(SQL_PUBLIC_BATCH).withKeepBinary();
-        IgniteCache<BinaryObject, BinaryObject> batchOnheapCache = ignite.cache(SQL_PUBLIC_BATCH_ONHEAP).withKeepBinary();
-        IgniteCache<BinaryObject, BinaryObject> batchTradeLookupCache = ignite.cache(SQL_PUBLIC_BATCH_TRADE_LOOKUP).withKeepBinary();
-        IgniteCache<BinaryObject, BinaryObject> batchTradeFullCache = ignite.cache(SQL_PUBLIC_BATCH_TRADE_FULL).withKeepBinary();
+        IgniteDataStreamer<BinaryObject, BinaryObject> tradeStream= ignite.dataStreamer(SQL_PUBLIC_TRADE);
+        IgniteDataStreamer<BinaryObject, BinaryObject> riskStream = ignite.dataStreamer(SQL_PUBLIC_RISK);
+        IgniteDataStreamer<BinaryObject, BinaryObject> batchStream = ignite.dataStreamer(SQL_PUBLIC_BATCH);
+        IgniteDataStreamer<BinaryObject, BinaryObject> batchOnheapStream = ignite.dataStreamer(SQL_PUBLIC_BATCH_ONHEAP);
+        IgniteDataStreamer<BinaryObject, BinaryObject> batchTradeLookupStream = ignite.dataStreamer(SQL_PUBLIC_BATCH_TRADE_LOOKUP);
+        IgniteDataStreamer<BinaryObject, BinaryObject> batchTradeFullStream = ignite.dataStreamer(SQL_PUBLIC_BATCH_TRADE_FULL);
+
+        tradeStream.keepBinary(true);
+        riskStream.keepBinary(true);
+        batchStream.keepBinary(true);
+        batchOnheapStream.keepBinary(true);
+        batchTradeLookupStream.keepBinary(true);
+        batchTradeFullStream.keepBinary(true);
+
+        tradeStream.allowOverwrite(false);
+        riskStream.allowOverwrite(false);
+        batchStream.allowOverwrite(false);
+        batchOnheapStream.allowOverwrite(false);
+        batchTradeLookupStream.allowOverwrite(false);
+        batchTradeFullStream.allowOverwrite(false);
 
         for (long tradeId = 0; tradeId < TRADES; tradeId++)
-            putTradeRecord(tradeCache, ignite, tradeId);
+            putTradeRecord(tradeStream, ignite, tradeId);
 
         System.out.println(">>>>>> Loaded trades");
 
         for (long i = 0; i < BATCHES; i++) {
             long batchKey = i;
 
-            putBatchRecord(batchCache, ignite, batchKey);
-            putBatchRecord(batchOnheapCache, ignite, batchKey);
+            putBatchRecord(batchStream, ignite, batchKey);
+            putBatchRecord(batchOnheapStream, ignite, batchKey);
 
-            IntStream.range(0, RISKS / BATCHES).parallel().forEach(batchRisk -> {
+            IntStream.range(0, RISKS / BATCHES).forEach(batchRisk -> {
                     long riskId = batchKey * RISKS / BATCHES + batchRisk;
                     long tradeId = ThreadLocalRandom.current().nextInt(TRADES);
 
-                    putRiskRecord(riskCache, ignite, riskId, tradeId, batchKey);
+                    putRiskRecord(riskStream, ignite, riskId, tradeId, batchKey);
 
-                    putBatchTradeLookupRecord(batchTradeLookupCache, ignite, tradeId, batchKey);
+                    putBatchTradeLookupRecord(batchTradeLookupStream, ignite, tradeId, batchKey);
 
-                    putBatchTradeFullRecord(batchTradeFullCache, ignite, tradeId, batchKey);
+                    putBatchTradeFullRecord(batchTradeFullStream, ignite, tradeId, batchKey);
                 }
             );
 
             if ((batchKey + 1) % 10 == 0)
                 System.out.println(">>>>>> Loaded batch " + (batchKey + 1));
         }
+
+        tradeStream.close();
+        riskStream.close();
+        batchStream.close();
+        batchOnheapStream.close();
+        batchTradeLookupStream.close();
+        batchTradeFullStream.close();
     }
 
-    private static void putBatchTradeFullRecord(IgniteCache<BinaryObject, BinaryObject> cache, Ignite ignite,
+    private static void putBatchTradeFullRecord(IgniteDataStreamer<BinaryObject, BinaryObject> stream, Ignite ignite,
         long tradeId, long batchKey) {
         BinaryObjectBuilder bKey = ignite.binary().builder("BATCH_TRADE_FULL_KEY");
         bKey.setField("BATCHKEY", batchKey);
@@ -130,10 +152,10 @@ public class Loader {
         bValue.setField("ISLATEST", true, Boolean.class);
         bValue.setField("VALUE1", "tradeValue" + tradeId, String.class);
 
-        cache.put(bKey.build(), bValue.build());
+        stream.addData(bKey.build(), bValue.build());
     }
 
-    private static void putBatchTradeLookupRecord(IgniteCache<BinaryObject, BinaryObject> cache, Ignite ignite,
+    private static void putBatchTradeLookupRecord(IgniteDataStreamer<BinaryObject, BinaryObject> stream, Ignite ignite,
         long tradeId, long batchKey) {
         BinaryObjectBuilder bKey = ignite.binary().builder("BATCH_TRADE_KEY");
         bKey.setField("BATCHKEY", batchKey);
@@ -143,10 +165,10 @@ public class Loader {
         BinaryObjectBuilder bValue = ignite.binary().builder("BATCH_TRADE_VALUE");
         bValue.setField("DUMMY_VALUE", 0);
 
-        cache.put(bKey.build(), bValue.build());
+        stream.addData(bKey.build(), bValue.build());
     }
 
-    private static void putRiskRecord(IgniteCache<BinaryObject, BinaryObject> riskCache, Ignite ignite,
+    private static void putRiskRecord(IgniteDataStreamer<BinaryObject, BinaryObject> stream, Ignite ignite,
         long riskId, long tradeId, long batchKey) {
         BinaryObjectBuilder bKey = ignite.binary().builder("RISK_KEY");
         bKey.setField("RISK_ID", riskId);
@@ -157,10 +179,10 @@ public class Loader {
         bValue.setField("BATCHKEY", batchKey);
         bValue.setField("VALUE2", ThreadLocalRandom.current().nextDouble(), Double.class);
 
-        riskCache.put(bKey.build(), bValue.build());
+        stream.addData(bKey.build(), bValue.build());
     }
 
-    private static void putTradeRecord(IgniteCache<BinaryObject, BinaryObject> cache, Ignite ignite, long tradeId) {
+    private static void putTradeRecord(IgniteDataStreamer<BinaryObject, BinaryObject> stream, Ignite ignite, long tradeId) {
         BinaryObjectBuilder bKey = ignite.binary().builder("TRADE_KEY");
         bKey.setField("TRADEIDENTIFIER", tradeId);
         bKey.setField("TRADEVERSION", 1L);
@@ -170,16 +192,16 @@ public class Loader {
         bValue.setField("BOOK", "RBCEUR" + bookIdx, String.class);
         bValue.setField("VALUE1", "tradeValue" + tradeId, String.class);
 
-        cache.put(bKey.build(), bValue.build());
+        stream.addData(bKey.build(), bValue.build());
     }
 
-    private static void putBatchRecord(IgniteCache<BinaryObject, BinaryObject> cache, Ignite ignite, long batchKey) {
+    private static void putBatchRecord(IgniteDataStreamer<BinaryObject, BinaryObject> stream, Ignite ignite, long batchKey) {
         BinaryObjectBuilder bKey = ignite.binary().builder("BATCH_KEY");
         bKey.setField("BATCHKEY", batchKey);
 
         BinaryObjectBuilder bValue = ignite.binary().builder("BATCH_VALUE");
         bValue.setField("ISLATEST", true, Boolean.class);
 
-        cache.put(bKey.build(), bValue.build());
+        stream.addData(bKey.build(), bValue.build());
     }
 }

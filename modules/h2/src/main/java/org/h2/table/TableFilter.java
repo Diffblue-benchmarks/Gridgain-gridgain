@@ -352,6 +352,9 @@ public class TableFilter implements ColumnResolver {
         if (joinCondition != null) {
             joinCondition = joinCondition.optimize(session);
         }
+
+        if (index.getClass() == HashJoinIndex.class && !((HashJoinIndex)index).isBuilt())
+            ((HashJoinIndex)index).prepare(session, masks, indexConditions);
     }
 
     /**
@@ -479,9 +482,6 @@ public class TableFilter implements ColumnResolver {
      * @return true if there are
      */
     public boolean next() {
-        if (index.getClass() == HashJoinIndex.class && !((HashJoinIndex)index).isBuilt())
-            ((HashJoinIndex)index).build(session, masks, indexConditions);
-
         if (joinBatch != null) {
             // will happen only on topTableFilter since joinBatch.next() does
             // not call join.next()

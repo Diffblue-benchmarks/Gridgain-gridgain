@@ -757,8 +757,23 @@ public abstract class Table extends SchemaObjectBase {
             && filters != null
             && filters.length > 1
             && session.isHashJoinEnabled()
-            && HashJoinIndex.isApplicable(session, this, masks)) {
-            indexes.add(getIndex("HASH_JOIN"));
+            && HashJoinIndex.isApplicable(session, this, masks)
+            && indexHints != null
+            && indexHints.getAllowedIndexes() != null
+            && indexHints.getAllowedIndexes().size() == 1
+            && indexHints.getAllowedIndexes().contains("HASH_JOIN")
+        ) {
+            Index hji = getIndex("HASH_JOIN");
+
+            double cost = hji.getCost(session, masks, filters, filter,
+                sortOrder, allColumnsSet);
+
+            if (cost < item.cost) {
+                item.cost = cost;
+                item.setIndex(hji);
+            }
+
+            return item;
         }
 
         if (indexes != null && masks != null) {

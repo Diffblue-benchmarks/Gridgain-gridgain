@@ -53,6 +53,9 @@ public class HashJoinIndex extends BaseIndex {
     /** Key columns to build hash table. */
     private int [] colIds;
 
+    /** Key columns to build hash table. */
+    private int colId;
+
     /** Ignorecase flags for each column of EQUI join. */
     private boolean [] ignorecase;
 
@@ -151,7 +154,11 @@ public class HashJoinIndex extends BaseIndex {
 
     /** {@inheritDoc} */
     @Override public Cursor find(Session session, SearchRow first, SearchRow last) {
-        Value key = hashKey(first);
+        if (hashTbl == null)
+            build(session);
+
+        Value key = first.getValue(colId);
+//        Value key = hashKey(first);
 
         List<Row> res = hashTbl.get(key);
 
@@ -175,9 +182,7 @@ public class HashJoinIndex extends BaseIndex {
      * @param masks Columns index mask.
      * @param indexConditions Index conditions to filter values when hash table is built.
      */
-    public void build(Session ses, int[] masks, ArrayList<IndexCondition> indexConditions) {
-        long t0 = System.currentTimeMillis();
-
+    public void prepare(Session ses, int[] masks, ArrayList<IndexCondition> indexConditions) {
         List<Integer> ids = new ArrayList<>();
         for (int i = 0; i < masks.length; ++i) {
             if (masks[i] == IndexCondition.EQUALITY)
@@ -195,6 +200,15 @@ public class HashJoinIndex extends BaseIndex {
                 || table.getColumn(colIds[i]).getType().getValueType() == Value.STRING_IGNORECASE;
         }
 
+        colId = colIds[0];
+    }
+
+    /**
+     * @param ses Session.
+     */
+    private void build(Session ses) {
+        long t0 = System.currentTimeMillis();
+
         Index idx = table.getScanIndex(ses);
 
         Cursor cur = idx.find(ses, null, null);
@@ -204,7 +218,7 @@ public class HashJoinIndex extends BaseIndex {
         while(cur.next()) {
             Row r = cur.get();
 
-            Value key = hashKey(r);
+            Value key = r.getValue(colId);
 
             List<Row> keyRows = hashTbl.get(key);
 
@@ -221,32 +235,34 @@ public class HashJoinIndex extends BaseIndex {
 
         if (t.isDebugEnabled())
             t.debug("Build hash table for {0}: {1} ms", table.getName(), System.currentTimeMillis() - t0);
+
+        System.out.printf("Build hash table for %s: %s ms\n", table.getName(), System.currentTimeMillis() - t0);
     }
 
-    /**
-     * @param r Row.
-     * @return Hash key.
-     */
-    private Value hashKey(SearchRow r) {
-        if (colIds.length == 1)
-            return ignorecaseIfNeed(r.getValue(colIds[0]), ignorecase[0]);
+//    /**
+//     * @param r Row.
+//     * @return Hash key.
+//     */
+//    private Value hashKey(SearchRow r) {
+//        if (colIds.length == 1)
+//            return ignorecaseIfNeed(r.getValue(colIds[0]), ignorecase[0]);
+//
+//        Value [] key = new Value[colIds.length];
+//
+//        for (int i = 0; i < colIds.length; ++i)
+//            key[i] =  ignorecaseIfNeed(r.getValue(colIds[i]), ignorecase[i]);
+//
+//        return ValueArray.get(key);
+//    }
 
-        Value [] key = new Value[colIds.length];
-
-        for (int i = 0; i < colIds.length; ++i)
-            key[i] =  ignorecaseIfNeed(r.getValue(colIds[i]), ignorecase[i]);
-
-        return ValueArray.get(key);
-    }
-
-    /**
-     * @param key Key value.
-     * @param ignorecase Flag to ignorecase.
-     * @return Ignorecase wrapper Value.
-     */
-    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
-        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
-    }
+//    /**
+//     * @param key Key value.
+//     * @param ignorecase Flag to ignorecase.
+//     * @return Ignorecase wrapper Value.
+//     */
+//    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
+//        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
+//    }
 
     /**
      * @param condition Index condition to test.
