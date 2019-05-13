@@ -1447,10 +1447,16 @@ where cnt < 1000 order by dir_num asc;
 > 3       1
 > rows (ordered): 3
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 explain select * from (select dir_num, count(*) as cnt from multi_pages  t, b_holding bh
 where t.bh_id=bh.id and bh.site='Hello' group by dir_num) as x
 where cnt < 1000 order by dir_num asc;
 >> SELECT "X"."DIR_NUM", "X"."CNT" FROM ( SELECT "DIR_NUM", COUNT(*) AS "CNT" FROM "PUBLIC"."MULTI_PAGES" "T" INNER JOIN "PUBLIC"."B_HOLDING" "BH" ON 1=1 WHERE ("BH"."SITE" = 'Hello') AND ("T"."BH_ID" = "BH"."ID") GROUP BY "DIR_NUM" ) "X" /* SELECT DIR_NUM, COUNT(*) AS CNT FROM PUBLIC.MULTI_PAGES T /++ PUBLIC.MULTI_PAGES.tableScan ++/ INNER JOIN PUBLIC.B_HOLDING BH /++ PUBLIC.PRIMARY_KEY_3: ID = T.BH_ID ++/ ON 1=1 WHERE (BH.SITE = 'Hello') AND (T.BH_ID = BH.ID) GROUP BY DIR_NUM HAVING COUNT(*) <= ?1: CNT < 1000 */ WHERE "CNT" < 1000 ORDER BY 1
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 select dir_num, count(*) as cnt from multi_pages  t, b_holding bh
 where t.bh_id=bh.id and bh.site='Hello' group by dir_num
@@ -2902,8 +2908,14 @@ select * from test2 where name like 'HELLO';
 > 1  hElLo
 > rows: 1
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 explain plan for select * from test2, test where test2.name = test.name;
 >> SELECT "TEST2"."ID", "TEST2"."NAME", "TEST"."ID", "TEST"."NAME" FROM "PUBLIC"."TEST2" /* PUBLIC.TEST2.tableScan */ INNER JOIN "PUBLIC"."TEST" /* PUBLIC.TEST.tableScan */ ON 1=1 WHERE "TEST2"."NAME" = "TEST"."NAME"
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 select * from test2, test where test2.name = test.name;
 > ID NAME  ID NAME
@@ -2912,8 +2924,14 @@ select * from test2, test where test2.name = test.name;
 > 2  World 2  World
 > rows: 2
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 explain plan for select * from test, test2 where test2.name = test.name;
 >> SELECT "TEST"."ID", "TEST"."NAME", "TEST2"."ID", "TEST2"."NAME" FROM "PUBLIC"."TEST2" /* PUBLIC.TEST2.tableScan */ INNER JOIN "PUBLIC"."TEST" /* PUBLIC.TEST.tableScan */ ON 1=1 WHERE "TEST2"."NAME" = "TEST"."NAME"
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 select * from test, test2 where test2.name = test.name;
 > ID NAME  ID NAME
@@ -2925,8 +2943,14 @@ select * from test, test2 where test2.name = test.name;
 create index idx_test2_name on test2(name);
 > ok
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 explain plan for select * from test2, test where test2.name = test.name;
 >> SELECT "TEST2"."ID", "TEST2"."NAME", "TEST"."ID", "TEST"."NAME" FROM "PUBLIC"."TEST" /* PUBLIC.TEST.tableScan */ INNER JOIN "PUBLIC"."TEST2" /* PUBLIC.IDX_TEST2_NAME: NAME = TEST.NAME */ ON 1=1 WHERE "TEST2"."NAME" = "TEST"."NAME"
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 select * from test2, test where test2.name = test.name;
 > ID NAME  ID NAME
@@ -2935,8 +2959,14 @@ select * from test2, test where test2.name = test.name;
 > 2  World 2  World
 > rows: 2
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 explain plan for select * from test, test2 where test2.name = test.name;
 >> SELECT "TEST"."ID", "TEST"."NAME", "TEST2"."ID", "TEST2"."NAME" FROM "PUBLIC"."TEST" /* PUBLIC.TEST.tableScan */ INNER JOIN "PUBLIC"."TEST2" /* PUBLIC.IDX_TEST2_NAME: NAME = TEST.NAME */ ON 1=1 WHERE "TEST2"."NAME" = "TEST"."NAME"
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 select * from test, test2 where test2.name = test.name;
 > ID NAME  ID NAME
@@ -3472,9 +3502,15 @@ drop table test;
 create table test(id int primary key);
 > ok
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 explain select * from test a inner join test b left outer join test c on c.id = a.id;
 #+mvStore#>> SELECT "A"."ID", "C"."ID", "B"."ID" FROM "PUBLIC"."TEST" "A" /* PUBLIC.TEST.tableScan */ LEFT OUTER JOIN "PUBLIC"."TEST" "C" /* PUBLIC.PRIMARY_KEY_2: ID = A.ID */ ON "C"."ID" = "A"."ID" INNER JOIN "PUBLIC"."TEST" "B" /* PUBLIC.TEST.tableScan */ ON 1=1
 #-mvStore#>> SELECT "A"."ID", "C"."ID", "B"."ID" FROM "PUBLIC"."TEST" "A" /* PUBLIC.PRIMARY_KEY_2 */ LEFT OUTER JOIN "PUBLIC"."TEST" "C" /* PUBLIC.PRIMARY_KEY_2: ID = A.ID */ ON "C"."ID" = "A"."ID" INNER JOIN "PUBLIC"."TEST" "B" /* PUBLIC.PRIMARY_KEY_2 */ ON 1=1
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 SELECT T.ID FROM TEST "T";
 > ID
@@ -4377,6 +4413,9 @@ insert into b values(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6), (7, 
 insert into b select id+10, p+10 from b;
 > update count: 10
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 explain select * from b b0, b b1, b b2 where b1.p = b0.id and b2.p = b1.id and b0.id=10;
 >> SELECT "B0"."ID", "B0"."P", "B1"."ID", "B1"."P", "B2"."ID", "B2"."P" FROM "PUBLIC"."B" "B0" /* PUBLIC.PRIMARY_KEY_4: ID = 10 */ /* WHERE B0.ID = 10 */ INNER JOIN "PUBLIC"."B" "B1" /* PUBLIC.BP: P = B0.ID */ ON 1=1 /* WHERE B1.P = B0.ID */ INNER JOIN "PUBLIC"."B" "B2" /* PUBLIC.BP: P = B1.ID */ ON 1=1 WHERE ("B0"."ID" = 10) AND (("B1"."P" = "B0"."ID") AND ("B2"."P" = "B1"."ID"))
 
@@ -4391,6 +4430,9 @@ analyze;
 
 explain select * from b b0, b b1, b b2, b b3, b b4 where b1.p = b0.id and b2.p = b1.id and b3.p = b2.id and b4.p = b3.id and b0.id=10;
 >> SELECT "B0"."ID", "B0"."P", "B1"."ID", "B1"."P", "B2"."ID", "B2"."P", "B3"."ID", "B3"."P", "B4"."ID", "B4"."P" FROM "PUBLIC"."B" "B0" /* PUBLIC.PRIMARY_KEY_4: ID = 10 */ /* WHERE B0.ID = 10 */ INNER JOIN "PUBLIC"."B" "B1" /* PUBLIC.BP: P = B0.ID */ ON 1=1 /* WHERE B1.P = B0.ID */ INNER JOIN "PUBLIC"."B" "B2" /* PUBLIC.BP: P = B1.ID */ ON 1=1 /* WHERE B2.P = B1.ID */ INNER JOIN "PUBLIC"."B" "B3" /* PUBLIC.BP: P = B2.ID */ ON 1=1 /* WHERE B3.P = B2.ID */ INNER JOIN "PUBLIC"."B" "B4" /* PUBLIC.BP: P = B3.ID */ ON 1=1 WHERE ("B0"."ID" = 10) AND (("B4"."P" = "B3"."ID") AND (("B3"."P" = "B2"."ID") AND (("B1"."P" = "B0"."ID") AND ("B2"."P" = "B1"."ID"))))
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 drop table if exists b;
 > ok
@@ -5247,6 +5289,9 @@ EXPLAIN PLAN FOR DELETE FROM TEST;
 #+mvStore#>> DELETE FROM "PUBLIC"."TEST" /* PUBLIC.TEST.tableScan */
 #-mvStore#>> DELETE FROM "PUBLIC"."TEST" /* PUBLIC.PRIMARY_KEY_2 */
 
+set HASH_JOIN_ENABLE 0;
+> ok
+
 EXPLAIN PLAN FOR SELECT NAME, COUNT(*) FROM TEST GROUP BY NAME HAVING COUNT(*) > 1;
 >> SELECT "NAME", COUNT(*) FROM "PUBLIC"."TEST" /* PUBLIC.TEST.tableScan */ GROUP BY "NAME" HAVING COUNT(*) > 1
 
@@ -5279,6 +5324,9 @@ EXPLAIN PLAN FOR SELECT CAST(ID AS VARCHAR(255)) FROM TEST;
 
 EXPLAIN PLAN FOR SELECT LEFT(NAME, 2) FROM TEST;
 >> SELECT LEFT("NAME", 2) FROM "PUBLIC"."TEST" /* PUBLIC.TEST.tableScan */
+
+set HASH_JOIN_ENABLE 1;
+> ok
 
 SELECT * FROM test t1 inner join test t2 on t1.id=t2.id and t2.name is not null where t1.id=1;
 > ID NAME  ID NAME
@@ -5525,6 +5573,10 @@ DROP TABLE CLASSES;
 > ok
 
 --- view ----------------------------------------------------------------------------------------------
+-- views doesn't works with hash joins fake index
+set HASH_JOIN_ENABLE 0;
+> ok
+
 CREATE CACHED TABLE TEST_A(ID INT PRIMARY KEY, NAME VARCHAR(255));
 > ok
 
@@ -5629,6 +5681,9 @@ DROP VIEW IF EXISTS TEST_ALL;
 > ok
 
 --- commit/rollback ----------------------------------------------------------------------------------------------
+set HASH_JOIN_ENABLE 1;
+> ok
+
 CREATE TABLE TEST(ID INT PRIMARY KEY, NAME VARCHAR(255));
 > ok
 

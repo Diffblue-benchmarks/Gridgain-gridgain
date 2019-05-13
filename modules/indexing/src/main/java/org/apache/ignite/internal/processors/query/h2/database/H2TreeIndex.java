@@ -451,6 +451,7 @@ public class H2TreeIndex extends H2TreeIndexBase {
     /** {@inheritDoc} */
     @Override public long getRowCount(Session ses) {
         try {
+            cctx.logger("TREE").info("+++ ROW COUNT");
             int seg = threadLocalSegment();
 
             H2Tree tree = treeForRead(seg);

@@ -169,7 +169,7 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     private BitSet idsToRelease;
 
     /** Enable HASH_JOIN fake index. */
-    private boolean hashJoinEnabled = true;
+    private boolean hashJoinEnabled;
 
     public Session(Database database, User user, int id) {
         this.database = database;

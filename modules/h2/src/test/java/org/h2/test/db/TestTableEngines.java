@@ -536,10 +536,14 @@ public class TestTableEngines extends TestDb {
     }
 
     private void checkPlan(Statement stat, String sql) throws SQLException {
+        stat.execute("SET HASH_JOIN_ENABLE 0");
+
         ResultSet rs = stat.executeQuery("EXPLAIN " + sql);
         assertTrue(rs.next());
         String plan = rs.getString(1);
         assertEquals(normalize(sql), normalize(plan));
+
+        stat.execute("SET HASH_JOIN_ENABLE 1");
     }
 
     private static String normalize(String sql) {

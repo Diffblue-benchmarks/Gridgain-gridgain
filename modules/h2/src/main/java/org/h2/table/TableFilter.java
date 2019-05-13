@@ -226,7 +226,8 @@ public class TableFilter implements ColumnResolver {
                 }
             }
         }
-        PlanItem item = table.getBestPlanItem(s, masks, filters, filter, sortOrder, allColumnsSet);
+
+        PlanItem item = table.getBestPlanItem(s, masks, filters, filter, sortOrder, allColumnsSet, isEquiJoined());
         item.setMasks(masks);
         // The more index conditions, the earlier the table.
         // This is to ensure joins without indexes run quickly:
@@ -255,6 +256,18 @@ public class TableFilter implements ColumnResolver {
             item.cost += item.cost * item.getJoinPlan().cost;
         }
         return item;
+    }
+
+    /**
+     * @return {@code true} if the filter is used in a EQUI-JOIN.
+     */
+    private boolean isEquiJoined() {
+        for (IndexCondition condition : indexConditions) {
+            if (HashJoinIndex.isEquiJoinCondition(condition))
+                return true;
+        }
+
+        return false;
     }
 
     /**
@@ -306,10 +319,6 @@ public class TableFilter implements ColumnResolver {
      * can not be used, and optimize the conditions.
      */
     public void prepare() {
-        if (index.getClass() == HashJoinIndex.class) {
-            ((HashJoinIndex)index).build(session, masks);
-        }
-
         // forget all unused index conditions
         // the indexConditions list may be modified here
         for (int i = 0; i < indexConditions.size(); i++) {
@@ -470,6 +479,9 @@ public class TableFilter implements ColumnResolver {
      * @return true if there are
      */
     public boolean next() {
+        if (index.getClass() == HashJoinIndex.class && !((HashJoinIndex)index).isBuilt())
+            ((HashJoinIndex)index).build(session, masks, indexConditions);
+
         if (joinBatch != null) {
             // will happen only on topTableFilter since joinBatch.next() does
             // not call join.next()

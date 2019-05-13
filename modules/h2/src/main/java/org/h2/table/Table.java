@@ -287,9 +287,8 @@ public abstract class Table extends SchemaObjectBase {
 
         if (indexes != null) {
             for (Index index : indexes) {
-                if (index.getName().equals(indexName)) {
+                if (index.getName().equals(indexName))
                     return index;
-                }
             }
         }
         throw DbException.get(ErrorCode.INDEX_NOT_FOUND_1, indexName);
@@ -740,7 +739,7 @@ public abstract class Table extends SchemaObjectBase {
      */
     public PlanItem getBestPlanItem(Session session, int[] masks,
             TableFilter[] filters, int filter, SortOrder sortOrder,
-            AllColumnsForPlan allColumnsSet) {
+            AllColumnsForPlan allColumnsSet, boolean isEquiJoined) {
         PlanItem item = new PlanItem();
         item.setIndex(getScanIndex(session));
         item.cost = item.getIndex().getCost(session, null, filters, filter, null, allColumnsSet);
@@ -753,7 +752,8 @@ public abstract class Table extends SchemaObjectBase {
         ArrayList<Index> indexes = getIndexes() == null ? null : new ArrayList<>(getIndexes());
         IndexHints indexHints = getIndexHints(filters, filter);
 
-        if (indexes != null
+        if (isEquiJoined
+            && indexes != null
             && filters != null
             && filters.length > 1
             && session.isHashJoinEnabled()
