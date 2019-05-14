@@ -140,7 +140,7 @@ public class Client {
         IgniteCache cache = ignite.getOrCreateCache("gateway");
 
         if (PLANS.add(sql)) {
-            List<?> planParts = (List<?>)cache.query(new SqlFieldsQuery("EXPLAIN " + sql).setSchema("PUBLIC").setEnforceJoinOrder(enforceJoinOrder)).getAll().get(0);
+            List<?> planParts = (List<?>)cache.query(new SqlFieldsQuery("EXPLAIN " + sql).setSchema("PUBLIC").setEnforceJoinOrder(enforceJoinOrder).setLazy(true)).getAll().get(0);
 
             for (Object planPart : planParts)
                 System.out.println(planPart);

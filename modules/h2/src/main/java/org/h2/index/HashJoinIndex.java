@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.h2.command.dml.AllColumnsForPlan;
 import org.h2.engine.DbObject;
 import org.h2.engine.Session;
@@ -35,39 +36,87 @@ import org.h2.result.SearchRow;
 import org.h2.result.SortOrder;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
+import org.h2.table.IndexHints;
 import org.h2.table.Table;
 import org.h2.table.TableFilter;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
+import org.h2.value.ValueNull;
 import org.h2.value.ValueStringIgnoreCase;
 
 /**
  * An unique index based on an in-memory hash map.
  */
 public class HashJoinIndex extends BaseIndex {
-    /**
-     * Hash table by column specified by colId.
-     */
-    private Map<Value, List<Row>> hashTbl;
-
-    /** Key columns to build hash table. */
-    private int [] colIds;
-
-    /** Key columns to build hash table. */
-    private int colId;
-
-    /** Ignorecase flags for each column of EQUI join. */
-    private boolean [] ignorecase;
+    /** String constant for Hash join hint, index name etc.. */
+    public static final String HASH_JOIN = "HASH_JOIN";
 
     /** Cursor. */
     private final IteratorCursor cur = new IteratorCursor();
+
+    /** Hash table by column specified by colId. */
+    private Map<Value, List<Row>> hashTbl;
+
+    /** Key columns to build hash table. */
+    private int[] colIds;
+
+    /** Ignorecase flags for each column of EQUI join. */
+    private boolean[] ignorecase;
+
+    /** Index conditions. */
+    private ArrayList<IndexCondition> indexConditions;
+
+    /** Conditions. */
+    private Set<ConditionChecker> condsCheckers;
 
     /**
      * @param table Table to build temporary hash join index.
      */
     public HashJoinIndex(Table table) {
-        super(table, 0, "HASH_JOIN",
+        super(table, 0, HASH_JOIN,
             IndexColumn.wrap(table.getColumns()), IndexType.createUnique(false, true));
+    }
+
+    /**
+     * @param key Key value.
+     * @param ignorecase Flag to ignorecase.
+     * @return Ignorecase wrapper Value.
+     */
+    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
+        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
+    }
+
+    /**
+     * @param condition Index condition to test.
+     * @return {@code true} if the filter is used in a EQUI-JOIN.
+     */
+    public static boolean isEquiJoinCondition(IndexCondition condition) {
+        HashSet<DbObject> dependencies = new HashSet<>();
+
+        ExpressionVisitor depsVisitor = ExpressionVisitor.getDependenciesVisitor(dependencies);
+
+        if (condition.getExpression() == null)
+            return false;
+
+        condition.getExpression().isEverything(depsVisitor);
+
+        int cmpType = condition.getCompareType();
+
+        return dependencies.size() == 1 && (cmpType == Comparison.EQUAL || cmpType == Comparison.EQUAL_NULL_SAFE);
+    }
+
+    /**
+     * @param ses Session.
+     * @param tbl Source table to build hash map.
+     * @param masks Index masks.
+     * @param indexHints Index hints to check HASH JOIN enabled.
+     * @return true if Hash JOIN index is applicable for specifid masks: there is EQUALITY for only one column.
+     */
+    public static boolean isApplicable(Session ses, Table tbl, int[] masks, IndexHints indexHints) {
+        return indexHints != null
+            && indexHints.getAllowedIndexes() != null
+            && indexHints.getAllowedIndexes().size() == 1
+            && indexHints.getAllowedIndexes().contains(HASH_JOIN);
     }
 
     /** {@inheritDoc} */
@@ -119,19 +168,24 @@ public class HashJoinIndex extends BaseIndex {
 
     /** {@inheritDoc} */
     @Override public double getCost(Session session, int[] masks,
-            TableFilter[] filters, int filter, SortOrder sortOrder,
-            AllColumnsForPlan allColumnsSet) {
+        TableFilter[] filters, int filter, SortOrder sortOrder,
+        AllColumnsForPlan allColumnsSet) {
 
-       for (Column column : columns) {
+        double cost = 0;
+
+        for (Column column : columns) {
             int index = column.getColumnId();
 
             int mask = masks[index];
 
             if (mask != 0 && ((mask & IndexCondition.EQUALITY) == IndexCondition.EQUALITY))
-                return 2 + table.getRowCountApproximation();
+                if (cost > 0)
+                    cost -= 2;
+                else
+                    cost = 2 + table.getRowCountApproximation();
         }
 
-        return Long.MAX_VALUE;
+        return cost > 0 ? cost : Long.MAX_VALUE;
     }
 
     /** {@inheritDoc} */
@@ -185,14 +239,30 @@ public class HashJoinIndex extends BaseIndex {
 
     /**
      * @param ses Session.
-     * @param masks Columns index mask.
      * @param indexConditions Index conditions to filter values when hash table is built.
      */
-    public void prepare(Session ses, int[] masks, ArrayList<IndexCondition> indexConditions) {
+    public void prepare(Session ses, ArrayList<IndexCondition> indexConditions) {
+        this.indexConditions = indexConditions;
+    }
+
+    /**
+     * @param ses Session.
+     */
+    private void prepare0(Session ses) {
         List<Integer> ids = new ArrayList<>();
-        for (int i = 0; i < masks.length; ++i) {
-            if (masks[i] == IndexCondition.EQUALITY)
-                ids.add(i);
+
+        for (IndexCondition idxCond : indexConditions) {
+            if (isEquiJoinCondition(idxCond))
+                ids.add(idxCond.getColumn().getColumnId());
+            else {
+                ConditionChecker checker = ConditionChecker.create(ses, idxCond);
+
+                if (condsCheckers == null && checker  != null)
+                    condsCheckers = new HashSet<>();
+
+                if (checker != null)
+                    condsCheckers.add(checker);
+            }
         }
 
         colIds = new int[ids.size()];
@@ -205,8 +275,6 @@ public class HashJoinIndex extends BaseIndex {
                 && ses.getDatabase().getIgnoreCase()
                 || table.getColumn(colIds[i]).getType().getValueType() == Value.STRING_IGNORECASE;
         }
-
-        colId = colIds[0];
     }
 
     /**
@@ -215,26 +283,30 @@ public class HashJoinIndex extends BaseIndex {
     private void build(Session ses) {
         long t0 = System.currentTimeMillis();
 
+        prepare0(ses);
+
         Index idx = table.getScanIndex(ses);
 
         Cursor cur = idx.find(ses, null, null);
 
         hashTbl = new HashMap<>();
 
-        while(cur.next()) {
+        while (cur.next()) {
             Row r = cur.get();
 
-            Value key = hashKey(r);
+            if (checkConditions(ses, r)) {
+                Value key = hashKey(r);
 
-            List<Row> keyRows = hashTbl.get(key);
+                List<Row> keyRows = hashTbl.get(key);
 
-            if (keyRows == null) {
-                keyRows = new ArrayList<>();
+                if (keyRows == null) {
+                    keyRows = new ArrayList<>();
 
-                hashTbl.put(key, keyRows);
+                    hashTbl.put(key, keyRows);
+                }
+
+                keyRows.add(r);
             }
-
-            keyRows.add(r);
         }
 
         Trace t = ses.getTrace();
@@ -256,56 +328,27 @@ public class HashJoinIndex extends BaseIndex {
         if (colIds.length == 1)
             return ignorecaseIfNeed(r.getValue(colIds[0]), ignorecase[0]);
 
-        Value [] key = new Value[colIds.length];
+        Value[] key = new Value[colIds.length];
 
         for (int i = 0; i < colIds.length; ++i)
-            key[i] =  ignorecaseIfNeed(r.getValue(colIds[i]), ignorecase[i]);
+            key[i] = ignorecaseIfNeed(r.getValue(colIds[i]), ignorecase[i]);
 
         return ValueArray.get(key);
     }
 
     /**
-     * @param key Key value.
-     * @param ignorecase Flag to ignorecase.
-     * @return Ignorecase wrapper Value.
-     */
-    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
-        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
-    }
-
-    /**
-     * @param condition Index condition to test.
-     * @return {@code true} if the filter is used in a EQUI-JOIN.
-     */
-    public static boolean isEquiJoinCondition(IndexCondition condition) {
-        HashSet<DbObject> dependencies = new HashSet<>();
-
-        ExpressionVisitor depsVisitor = ExpressionVisitor.getDependenciesVisitor(dependencies);
-
-        if (condition.getExpression() == null)
-            return false;
-
-        condition.getExpression().isEverything(depsVisitor);
-
-        int cmpType = condition.getCompareType();
-
-        return dependencies.size() == 1 && (cmpType == Comparison.EQUAL || cmpType == Comparison.EQUAL_NULL_SAFE);
-    }
-
-
-    /**
      * @param ses Session.
-     * @param tbl Source table to build hash map.
-     * @param masks Index masks.
-     * @return true if Hash JOIN index is applicable for specifid masks: there is EQUALITY for only one column.
+     * @param r Current row.
+     * @return {@code true} if the row is OK with all index conditions.
      */
-    public static boolean isApplicable(Session ses, Table tbl, int[] masks) {
-//        if (masks == null || tbl.getRowCountApproximation() > 100_000)
-//            return false;
+    private boolean checkConditions(Session ses, Row r) {
+        for (ConditionChecker checker : condsCheckers) {
+            if (!checker.check(getTable(), r))
+                return false;
+        }
 
         return true;
     }
-
     /**
      *
      */
@@ -355,6 +398,137 @@ public class HashJoinIndex extends BaseIndex {
         /** {@inheritDoc} */
         @Override public String toString() {
             return "IteratorCursor->" + current;
+        }
+    }
+
+    /**
+     *
+     */
+    private abstract static class ConditionChecker {
+        /** Column ID. */
+        int colId;
+
+        /** Value to compare. */
+        Value v;
+
+        /**
+         * @param tbl Table to compare.
+         * @param r Row to check condition.
+         * @return {@code true} if row is OK with the condition.
+         */
+        boolean check(Table tbl, Row r) {
+            Value o = r.getValue(colId);
+
+            if (o.containsNull())
+                return false;
+
+            return checkValue(tbl, o);
+        }
+
+        /**
+         * @param tbl Table to compare values.
+         * @param o Value to compare.
+         * @return Compare result.
+         */
+        abstract boolean checkValue(Table tbl, Value o);
+
+        /**
+         * @param ses Session.
+         * @param idxCond Index condition to create checker.
+         * @return Condition checker.
+         */
+        static ConditionChecker create(Session ses, IndexCondition idxCond) {
+            ConditionChecker checker;
+
+            switch (idxCond.getCompareType()) {
+                case Comparison.IN_LIST:
+                case Comparison.IN_QUERY:
+                case Comparison.SPATIAL_INTERSECTS:
+                case Comparison.FALSE:
+                    return null;
+
+                case Comparison.EQUAL:
+                case Comparison.EQUAL_NULL_SAFE:
+                    checker = new ConditionEqualChecker();
+                    break;
+
+                case Comparison.BIGGER_EQUAL:
+                    checker = new ConditionBiggerEqualChecker();
+                    break;
+
+                case Comparison.BIGGER:
+                    checker = new ConditionBiggerChecker();
+                    break;
+
+                case Comparison.SMALLER_EQUAL:
+                    checker = new ConditionSmallerEqualChecker();
+                    break;
+
+                case Comparison.SMALLER:
+                    checker = new ConditionSmallerChecker();
+                    break;
+
+                default:
+                    throw DbException.throwInternalError("type=" + idxCond.getCompareType());
+            }
+
+            if (checker != null) {
+                checker.colId = idxCond.getColumn().getColumnId();
+
+                checker.v = idxCond.getCurrentValue(ses);
+            }
+
+            return checker;
+        }
+    }
+
+    /**
+     *
+     */
+    private static class ConditionEqualChecker extends ConditionChecker {
+        /** {@inheritDoc} */
+        @Override boolean checkValue(Table tbl, Value o) {
+            return tbl.compareValues(v, o) == 0;
+        }
+    }
+
+    /**
+     *
+     */
+    private static class ConditionBiggerEqualChecker extends ConditionChecker {
+        /** {@inheritDoc} */
+        @Override boolean checkValue(Table tbl, Value o) {
+            return tbl.compareValues(v, o) >= 0;
+        }
+    }
+
+    /**
+     *
+     */
+    private static class ConditionBiggerChecker extends ConditionChecker {
+        /** {@inheritDoc} */
+        @Override boolean checkValue(Table tbl, Value o) {
+            return tbl.compareValues(v, o) > 0;
+        }
+    }
+
+    /**
+     *
+     */
+    private static class ConditionSmallerChecker extends ConditionChecker {
+        /** {@inheritDoc} */
+        @Override boolean checkValue(Table tbl, Value o) {
+            return tbl.compareValues(v, o) < 0;
+        }
+    }
+
+    /**
+     *
+     */
+    private static class ConditionSmallerEqualChecker extends ConditionChecker {
+        /** {@inheritDoc} */
+        @Override boolean checkValue(Table tbl, Value o) {
+            return tbl.compareValues(v, o) <= 0;
         }
     }
 }

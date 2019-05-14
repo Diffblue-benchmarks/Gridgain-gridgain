@@ -47,13 +47,21 @@ public class TestHashJoin {
         for (int i = 0; i < LEFT_CNT; ++i)
             sql("INSERT INTO A VALUES(?, ?)", i, i % 3 == 0 ? null : i);
 
-        sql("CREATE TABLE B(ID INT PRIMARY KEY, val0 int, val1 int, A_JID INT, val3 int)");
+        sql("CREATE TABLE B(ID INT PRIMARY KEY, val0 int, val1 VARCHAR(20), A_JID INT, val2 BOOLEAN)");
         sql("CREATE INDEX B_A_JID ON B(A_JID)");
 
         for (int i = 0; i < RIGHT_CNT; ++i)
-            sql("INSERT INTO B (ID, A_JID, val0) VALUES(?, ?, ?)", i, i % 4 == 0 ? null : i, i % 10);
+            sql("INSERT INTO B (ID, A_JID, val0) VALUES(?, ?, ?)",
+                i,
+                i % 4 == 0 ? null : i,
+                i == 0 ? null : i % 10);
 
-//        sql("SET TRACE_LEVEL_SYSTEM_OUT 10");
+        sql("INSERT INTO B (ID, A_JID, val0, val1, val2) VALUES(?, ?, ?, ?, ?)",
+            RIGHT_CNT,
+            RIGHT_CNT % 4,
+            null, null, null);
+
+        sql("SET TRACE_LEVEL_SYSTEM_OUT 10");
     }
 
     /**
@@ -93,6 +101,10 @@ public class TestHashJoin {
                 "     */"));
     }
 
+    @Test
+    public void testDbg() throws Exception {
+        System.out.println(sql("SELECT * FROM A, B USE INDEX (HASH_JOIN) WHERE B.A_JID = A.JID AND B.val1 = 'qwe' "));
+    }
     /**
      * @throws Exception On error.
      */

@@ -354,7 +354,7 @@ public class TableFilter implements ColumnResolver {
         }
 
         if (index.getClass() == HashJoinIndex.class && !((HashJoinIndex)index).isBuilt())
-            ((HashJoinIndex)index).prepare(session, masks, indexConditions);
+            ((HashJoinIndex)index).prepare(session, indexConditions);
     }
 
     /**

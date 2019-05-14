@@ -281,7 +281,7 @@ public abstract class Table extends SchemaObjectBase {
     public Index getIndex(String indexName) {
         ArrayList<Index> indexes = getIndexes();
 
-        if ("HASH_JOIN".equalsIgnoreCase(indexName)) {
+        if (HashJoinIndex.HASH_JOIN.equalsIgnoreCase(indexName)) {
             return new HashJoinIndex(this);
         }
 
@@ -753,17 +753,10 @@ public abstract class Table extends SchemaObjectBase {
         IndexHints indexHints = getIndexHints(filters, filter);
 
         if (isEquiJoined
-            && indexes != null
-            && filters != null
-            && filters.length > 1
             && session.isHashJoinEnabled()
-            && HashJoinIndex.isApplicable(session, this, masks)
-            && indexHints != null
-            && indexHints.getAllowedIndexes() != null
-            && indexHints.getAllowedIndexes().size() == 1
-            && indexHints.getAllowedIndexes().contains("HASH_JOIN")
+            && HashJoinIndex.isApplicable(session, this, masks, indexHints)
         ) {
-            Index hji = getIndex("HASH_JOIN");
+            Index hji = getIndex(HashJoinIndex.HASH_JOIN);
 
             double cost = hji.getCost(session, masks, filters, filter,
                 sortOrder, allColumnsSet);
