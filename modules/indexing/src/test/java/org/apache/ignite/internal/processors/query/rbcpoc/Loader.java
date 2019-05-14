@@ -26,7 +26,7 @@ public class Loader {
     private static final String SQL_PUBLIC_BATCH_ONHEAP = "BATCH_ONHEAP_CACHE";
     private static final String SQL_PUBLIC_TRADE = "TRADE_CACHE";
     private static final String SQL_PUBLIC_RISK = "RISK_CACHE";
-    public static final int RISKS = 20_000_000 / 10; // TODO: /100
+    public static final int RISKS = 200_000 ; // TODO: /100
     public static final int TRADES = 50_000; // TODO: /100
     public static final int BOOKS = 5;
     public static final int BATCHES = 100;

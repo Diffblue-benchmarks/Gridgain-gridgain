@@ -755,6 +755,9 @@ public class Select extends Query {
             }
             result.limitsWereApplied();
         }
+
+        lazyResult.close();
+
         return null;
     }
 
@@ -1993,18 +1996,12 @@ public class Select extends Query {
      * Reset the batch-join after the query result is closed.
      */
     void resetHashJoinIndexAfterQuery() {
-
         topTableFilter.visit(new TableFilterVisitor() {
             @Override public void accept(TableFilter f) {
                 if (f.getIndex().getClass() == HashJoinIndex.class)
                     f.getIndex().close(session);
             }
         });
-
-        JoinBatch jb = getJoinBatch();
-        if (jb != null) {
-            jb.reset(false);
-        }
     }
 
 }
