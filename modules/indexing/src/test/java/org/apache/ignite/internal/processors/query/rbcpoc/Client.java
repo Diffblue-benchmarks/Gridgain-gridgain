@@ -31,18 +31,6 @@ public class Client {
             runSql(ignite, sql, false);
         });
 
-        System.out.println(">>>> Benchmarking query B -> T -> R...");
-        benchmark(() -> {
-            String sql = "SELECT  *\n" +
-                "FROM BATCH B, TRADE T, RISK R\n" +
-                "WHERE    R.BATCHKEY = B.BATCHKEY\n" +
-                "AND      R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
-                "AND      R.TRADEVERSION = T.TRADEVERSION\n" +
-                "AND      T.BOOK = 'RBCEUR0'\n" +
-                "AND      B.ISLATEST = TRUE;";
-            runSql(ignite, sql, true);
-        });
-
         System.out.println(">>>> Benchmarking hash join...");
         benchmark(() -> {
             String sql = "SELECT  *\n" +
@@ -59,7 +47,7 @@ public class Client {
         System.out.println(">>>> Benchmarking TWO hash join...");
         benchmark(() -> {
             String sql = "SELECT  *\n" +
-                "FROM    TRADE T, RISK R USE INDEX(HASH_JOIN), BATCH B USE INDEX(HASH_JOIN) \n" +
+                "FROM    RISK R, TRADE T USE INDEX(HASH_JOIN), BATCH B USE INDEX(HASH_JOIN) \n" +
                 "WHERE    R.BATCHKEY = B.BATCHKEY\n" +
                 "AND      R.TRADEIDENTIFIER = T.TRADEIDENTIFIER\n" +
                 "AND      R.TRADEVERSION = T.TRADEVERSION\n" +

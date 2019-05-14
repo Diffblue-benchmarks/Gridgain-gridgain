@@ -96,7 +96,14 @@ public class HashJoinIndex extends BaseIndex {
     }
 
     /** {@inheritDoc} */
-    @Override public void close(Session session) {
+    @Override public void close(Session ses) {
+        Trace t = ses.getTrace();
+
+        if (t.isDebugEnabled())
+            t.debug("Clear hash table for {0}", table.getName());
+
+        System.out.printf("+++ Clear hash table for %s\n", table.getName());
+
         hashTbl = null;
     }
 
@@ -157,8 +164,7 @@ public class HashJoinIndex extends BaseIndex {
         if (hashTbl == null)
             build(session);
 
-        Value key = first.getValue(colId);
-//        Value key = hashKey(first);
+        Value key = hashKey(first);
 
         List<Row> res = hashTbl.get(key);
 
@@ -218,7 +224,7 @@ public class HashJoinIndex extends BaseIndex {
         while(cur.next()) {
             Row r = cur.get();
 
-            Value key = r.getValue(colId);
+            Value key = hashKey(r);
 
             List<Row> keyRows = hashTbl.get(key);
 
@@ -236,33 +242,36 @@ public class HashJoinIndex extends BaseIndex {
         if (t.isDebugEnabled())
             t.debug("Build hash table for {0}: {1} ms", table.getName(), System.currentTimeMillis() - t0);
 
-        System.out.printf("Build hash table for %s: %s ms\n", table.getName(), System.currentTimeMillis() - t0);
+        if (colIds.length > 1)
+            System.out.printf("+++ Build compound hash table for %s: %s ms\n", table.getName(), System.currentTimeMillis() - t0);
+        else
+            System.out.printf("+++ Build hash table for %s: %s ms\n", table.getName(), System.currentTimeMillis() - t0);
     }
 
-//    /**
-//     * @param r Row.
-//     * @return Hash key.
-//     */
-//    private Value hashKey(SearchRow r) {
-//        if (colIds.length == 1)
-//            return ignorecaseIfNeed(r.getValue(colIds[0]), ignorecase[0]);
-//
-//        Value [] key = new Value[colIds.length];
-//
-//        for (int i = 0; i < colIds.length; ++i)
-//            key[i] =  ignorecaseIfNeed(r.getValue(colIds[i]), ignorecase[i]);
-//
-//        return ValueArray.get(key);
-//    }
+    /**
+     * @param r Row.
+     * @return Hash key.
+     */
+    private Value hashKey(SearchRow r) {
+        if (colIds.length == 1)
+            return ignorecaseIfNeed(r.getValue(colIds[0]), ignorecase[0]);
 
-//    /**
-//     * @param key Key value.
-//     * @param ignorecase Flag to ignorecase.
-//     * @return Ignorecase wrapper Value.
-//     */
-//    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
-//        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
-//    }
+        Value [] key = new Value[colIds.length];
+
+        for (int i = 0; i < colIds.length; ++i)
+            key[i] =  ignorecaseIfNeed(r.getValue(colIds[i]), ignorecase[i]);
+
+        return ValueArray.get(key);
+    }
+
+    /**
+     * @param key Key value.
+     * @param ignorecase Flag to ignorecase.
+     * @return Ignorecase wrapper Value.
+     */
+    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
+        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
+    }
 
     /**
      * @param condition Index condition to test.
@@ -291,8 +300,8 @@ public class HashJoinIndex extends BaseIndex {
      * @return true if Hash JOIN index is applicable for specifid masks: there is EQUALITY for only one column.
      */
     public static boolean isApplicable(Session ses, Table tbl, int[] masks) {
-        if (masks == null || tbl.getRowCountApproximation() > 100_000)
-            return false;
+//        if (masks == null || tbl.getRowCountApproximation() > 100_000)
+//            return false;
 
         return true;
     }

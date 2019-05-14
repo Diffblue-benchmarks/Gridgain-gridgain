@@ -27,6 +27,7 @@ import org.h2.expression.analysis.Window;
 import org.h2.expression.condition.Comparison;
 import org.h2.expression.condition.ConditionAndOr;
 import org.h2.index.Cursor;
+import org.h2.index.HashJoinIndex;
 import org.h2.index.Index;
 import org.h2.index.IndexType;
 import org.h2.index.ViewIndex;
@@ -1346,6 +1347,7 @@ public class Select extends Query {
         }
         expressionArray = expressions.toArray(new Expression[0]);
         isPrepared = true;
+
     }
 
     @Override
@@ -1849,6 +1851,8 @@ public class Select extends Query {
             if (!isClosed()) {
                 super.close();
                 resetJoinBatchAfterQuery();
+
+                resetHashJoinIndexAfterQuery();
             }
         }
 
@@ -1982,6 +1986,25 @@ public class Select extends Query {
      */
     public Select getParentSelect() {
         return parentSelect;
+    }
+
+
+    /**
+     * Reset the batch-join after the query result is closed.
+     */
+    void resetHashJoinIndexAfterQuery() {
+
+        topTableFilter.visit(new TableFilterVisitor() {
+            @Override public void accept(TableFilter f) {
+                if (f.getIndex().getClass() == HashJoinIndex.class)
+                    f.getIndex().close(session);
+            }
+        });
+
+        JoinBatch jb = getJoinBatch();
+        if (jb != null) {
+            jb.reset(false);
+        }
     }
 
 }

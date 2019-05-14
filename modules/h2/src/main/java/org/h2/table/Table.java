@@ -768,10 +768,8 @@ public abstract class Table extends SchemaObjectBase {
             double cost = hji.getCost(session, masks, filters, filter,
                 sortOrder, allColumnsSet);
 
-            if (cost < item.cost) {
-                item.cost = cost;
-                item.setIndex(hji);
-            }
+            item.cost = cost;
+            item.setIndex(hji);
 
             return item;
         }

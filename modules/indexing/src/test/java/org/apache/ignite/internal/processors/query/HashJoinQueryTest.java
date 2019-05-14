@@ -77,7 +77,7 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
                 .addQueryField("A_JID", Long.class.getName(), null)
                 .addQueryField("VAL0", String.class.getName(), null)
                 .setKeyFieldName("ID")
-//                .setIndexes(Collections.singleton(new QueryIndex("A_JID")))
+                .setIndexes(Collections.singleton(new QueryIndex("A_JID")))
             )));
 
         IgniteCache cacheC = grid(0).createCache(new CacheConfiguration()
@@ -90,8 +90,9 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
                 .addQueryField("A_JID", Long.class.getName(), null)
                 .addQueryField("VAL0", String.class.getName(), null)
                 .setKeyFieldName("ID")
-//                .setIndexes(Collections.singleton(new QueryIndex("A_JID")))
+                .setIndexes(Collections.singleton(new QueryIndex("A_JID")))
             )));
+
 
         Map<Long, Long> batch = new HashMap<>();
         for (long i = 0; i < LEFT_CNT; ++i) {
@@ -136,7 +137,38 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
      * Test local query execution.
      */
     @Test
-    public void test() {
+    public void testJoinTwo() {
+        int cnt = 0;
+
+        while (true) {
+            enforceJoinOrder = true;
+            long t0 = U.currentTimeMillis();
+
+            for (int i = 0; i < 1; ++i)
+                run("SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                    "WHERE A.JID = B.A_JID");
+
+            enforceJoinOrder = false;
+            long t1 = U.currentTimeMillis();
+
+            for (int i = 0; i < 1; ++i)
+                run("SELECT * FROM A, B " +
+                    "WHERE A.JID = B.A_JID");
+
+            log.info("+++ HASH=" + (t1-t0) + ", LOOP=" + (U.currentTimeMillis() - t1));
+
+            if (cnt % 10 == 0)
+                GridDebug.dumpHeap(String.format("hashj%03d.hprof", cnt / 10), true);
+
+            cnt++;
+        }
+    }
+
+    /**
+     * Test local query execution.
+     */
+    @Test
+    public void testJoinThree() {
 //        enforceJoinOrder = true;
 //        run("SELECT * FROM A, B USE INDEX(HASH_JOIN), C USE INDEX(HASH_JOIN) " +
 //            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
@@ -149,16 +181,17 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
 
             for (int i = 0; i < 1; ++i)
                 run("SELECT * FROM A, B USE INDEX(HASH_JOIN), C USE INDEX(HASH_JOIN) " +
-                    "WHERE A.JID = B.ID AND A.JID=C.ID");
-//            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
+//                    "WHERE A.JID = B.ID AND A.JID=C.ID");
+            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
             enforceJoinOrder = false;
             long t1 = U.currentTimeMillis();
+            log.info("+++ HASH=" + (t1-t0));
 
             for (int i = 0; i < 1; ++i)
                 run("SELECT * FROM A, B, C " +
-                    "WHERE A.JID = B.ID AND A.JID=C.ID");
-//            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
+//                    "WHERE A.JID = B.ID AND A.JID=C.ID");
+            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
             log.info("+++ HASH=" + (t1-t0) + ", LOOP=" + (U.currentTimeMillis() - t1));
 
