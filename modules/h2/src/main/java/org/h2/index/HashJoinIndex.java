@@ -311,13 +311,15 @@ public class HashJoinIndex extends BaseIndex {
 
         Trace t = ses.getTrace();
 
-        if (t.isDebugEnabled())
-            t.debug("Build hash table for {0}: {1} ms", table.getName(), System.currentTimeMillis() - t0);
+        if (t.isDebugEnabled()) {
+            t.debug("Build hash table for {0}, size={1}. Duration={2} ms",
+                    table.getName(), hashTbl.size(), System.currentTimeMillis() - t0);
+        }
 
         if (colIds.length > 1)
-            System.out.printf("+++ Build compound hash table for %s: %s ms\n", table.getName(), System.currentTimeMillis() - t0);
+            System.out.printf("+++ Build compound hash table for %s, size=%d: %s ms\n", table.getName(), hashTbl.size(), System.currentTimeMillis() - t0);
         else
-            System.out.printf("+++ Build hash table for %s: %s ms\n", table.getName(), System.currentTimeMillis() - t0);
+            System.out.printf("+++ Build hash table for %s, size=%d: %s ms\n", table.getName(), hashTbl.size(), System.currentTimeMillis() - t0);
     }
 
     /**
