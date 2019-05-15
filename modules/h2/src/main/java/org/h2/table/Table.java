@@ -287,8 +287,9 @@ public abstract class Table extends SchemaObjectBase {
 
         if (indexes != null) {
             for (Index index : indexes) {
-                if (index.getName().equals(indexName))
+                if (index.getName().equals(indexName)) {
                     return index;
+                }
             }
         }
         throw DbException.get(ErrorCode.INDEX_NOT_FOUND_1, indexName);
@@ -756,13 +757,13 @@ public abstract class Table extends SchemaObjectBase {
             && session.isHashJoinEnabled()
             && HashJoinIndex.isApplicable(session, this, masks, indexHints)
         ) {
-            Index hji = getIndex(HashJoinIndex.HASH_JOIN);
+            Index hjIdx = getIndex(HashJoinIndex.HASH_JOIN);
 
-            double cost = hji.getCost(session, masks, filters, filter,
+            double cost = hjIdx.getCost(session, masks, filters, filter,
                 sortOrder, allColumnsSet);
 
             item.cost = cost;
-            item.setIndex(hji);
+            item.setIndex(hjIdx);
 
             return item;
         }

@@ -144,14 +144,6 @@ public class H2TreeIndex extends H2TreeIndexBase {
     /** Query context registry. */
     private final QueryContextRegistry qryCtxRegistry;
 
-    public long nextCount;
-
-    public long findCounts;
-
-    public long findOk;
-
-    public long findTime;
-
     /**
      * @param cctx Cache context.
      * @param tbl Table.
@@ -367,10 +359,6 @@ public class H2TreeIndex extends H2TreeIndexBase {
         assert lower == null || lower instanceof H2Row : lower;
         assert upper == null || upper instanceof H2Row : upper;
 
-        findCounts++;
-
-        long t0 = System.nanoTime();
-
         try {
             int seg = threadLocalSegment();
 
@@ -383,8 +371,6 @@ public class H2TreeIndex extends H2TreeIndexBase {
                 if (row == null || isExpired(row))
                     return GridH2Cursor.EMPTY;
 
-                findOk++;
-
                 return new SingleRowCursor(row);
             }
             else {
@@ -394,9 +380,6 @@ public class H2TreeIndex extends H2TreeIndexBase {
         }
         catch (IgniteCheckedException e) {
             throw DbException.convert(e);
-        }
-        finally {
-            findTime += System.nanoTime() - t0;
         }
     }
 
@@ -468,7 +451,6 @@ public class H2TreeIndex extends H2TreeIndexBase {
     /** {@inheritDoc} */
     @Override public long getRowCount(Session ses) {
         try {
-            cctx.logger("TREE").info("+++ ROW COUNT");
             int seg = threadLocalSegment();
 
             H2Tree tree = treeForRead(seg);
@@ -928,19 +910,5 @@ public class H2TreeIndex extends H2TreeIndexBase {
         public List<InlineIndexHelper> inlineIdx() {
             return inlineIdx;
         }
-    }
-
-    @Override public void traceOnQueryEnd() {
-        System.out.printf("+++ TreeIdx: %s, findTime=%d, findCounts=%d, findOk=%d, nextCount=%d\n",
-            getName(),
-            findTime / 1000,
-            findCounts,
-            findOk,
-            nextCount);
-
-        findTime = 0;
-        findCounts = 0;
-        findOk = 0;
-        nextCount = 0;
     }
 }

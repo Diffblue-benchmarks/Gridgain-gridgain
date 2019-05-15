@@ -500,9 +500,4 @@ public abstract class BaseIndex extends SchemaObjectBase implements Index {
         remove(session, oldRow);
         add(session, newRow);
     }
-
-    public void traceOnQueryEnd() {
-        //No-op.
-    }
-
 }

@@ -26,7 +26,6 @@ import org.h2.expression.analysis.DataAnalysisOperation;
 import org.h2.expression.analysis.Window;
 import org.h2.expression.condition.Comparison;
 import org.h2.expression.condition.ConditionAndOr;
-import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.HashJoinIndex;
 import org.h2.index.Index;
@@ -1351,7 +1350,6 @@ public class Select extends Query {
         }
         expressionArray = expressions.toArray(new Expression[0]);
         isPrepared = true;
-
     }
 
     @Override
@@ -1856,7 +1854,7 @@ public class Select extends Query {
                 super.close();
                 resetJoinBatchAfterQuery();
 
-                resetHashJoinIndexAfterQuery();
+                clearHashJoinIndexAfterQuery();
             }
         }
 
@@ -1996,22 +1994,12 @@ public class Select extends Query {
     /**
      * Reset the batch-join after the query result is closed.
      */
-    void resetHashJoinIndexAfterQuery() {
+    void clearHashJoinIndexAfterQuery() {
         topTableFilter.visit(new TableFilterVisitor() {
             @Override public void accept(TableFilter f) {
                 if (f.getIndex().getClass() == HashJoinIndex.class)
-                    f.getIndex().close(session);
-                else if (f.getIndex() instanceof BaseIndex)
-                    ((BaseIndex)f.getIndex()).traceOnQueryEnd();
+                    ((HashJoinIndex)f.getIndex()).clearHashTable(session);
             }
         });
-
-        topTableFilter.visit(new TableFilterVisitor() {
-            @Override public void accept(TableFilter f) {
-                System.out.println("+++ " + f.getTable().getName() + ":" + f.scanCount);
-            }
-        });
-
     }
-
 }

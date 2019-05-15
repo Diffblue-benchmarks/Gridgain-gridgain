@@ -58,7 +58,7 @@ public class TableFilter implements ColumnResolver {
     private Index index;
     private final IndexHints indexHints;
     private int[] masks;
-    public int scanCount;
+    private int scanCount;
     private boolean evaluatable;
 
     /**
@@ -353,7 +353,7 @@ public class TableFilter implements ColumnResolver {
             joinCondition = joinCondition.optimize(session);
         }
 
-        if (index.getClass() == HashJoinIndex.class && !((HashJoinIndex)index).isBuilt())
+        if (index.getClass() == HashJoinIndex.class)
             ((HashJoinIndex)index).prepare(session, indexConditions);
     }
 

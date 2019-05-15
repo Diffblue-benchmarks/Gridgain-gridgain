@@ -68,14 +68,6 @@ public class HashJoinIndex extends BaseIndex {
     /** Conditions. */
     private Set<ConditionChecker> condsCheckers;
 
-    public long nextCount;
-
-    public long findCounts;
-
-    public long findOk;
-
-    public long findTime;
-
     /**
      * @param table Table to build temporary hash join index.
      */
@@ -153,24 +145,7 @@ public class HashJoinIndex extends BaseIndex {
 
     /** {@inheritDoc} */
     @Override public void close(Session ses) {
-        Trace t = ses.getTrace();
-
-        if (t.isDebugEnabled())
-            t.debug("Clear hash table for {0}", table.getName());
-
-        System.out.printf("+++ Clear hash table for %s, findTime=%d, findCounts=%d, findOk=%d, nextCount=%d\n",
-            table.getName(),
-            findTime / 1000,
-            findCounts,
-            findOk,
-            nextCount);
-
-        hashTbl = null;
-
-        findTime = 0;
-        findCounts = 0;
-        findOk = 0;
-        nextCount = 0;
+        // No-op.
     }
 
     /** {@inheritDoc} */
@@ -235,8 +210,6 @@ public class HashJoinIndex extends BaseIndex {
         if (hashTbl == null)
             build(session);
 
-        findCounts++;
-        long t0 = System.nanoTime();
         Value key = hashKey(first);
 
         List<Row> res = hashTbl.get(key);
@@ -244,11 +217,7 @@ public class HashJoinIndex extends BaseIndex {
         if (res == null)
             return Cursor.EMPTY;
 
-        findOk++;
-
         cur.open(res.iterator());
-
-        findTime += System.nanoTime() - t0;
 
         return cur;
     }
@@ -265,6 +234,8 @@ public class HashJoinIndex extends BaseIndex {
      * @param indexConditions Index conditions to filter values when hash table is built.
      */
     public void prepare(Session ses, ArrayList<IndexCondition> indexConditions) {
+        assert hashTbl == null;
+
         this.indexConditions = indexConditions;
     }
 
@@ -338,11 +309,6 @@ public class HashJoinIndex extends BaseIndex {
             t.debug("Build hash table for {0}, size={1}. Duration={2} ms",
                     table.getName(), hashTbl.size(), System.currentTimeMillis() - t0);
         }
-
-        if (colIds.length > 1)
-            System.out.printf("+++ Build compound hash table for %s, size=%d: %s ms\n", table.getName(), hashTbl.size(), System.currentTimeMillis() - t0);
-        else
-            System.out.printf("+++ Build hash table for %s, size=%d: %s ms\n", table.getName(), hashTbl.size(), System.currentTimeMillis() - t0);
     }
 
     /**
@@ -376,6 +342,14 @@ public class HashJoinIndex extends BaseIndex {
 
         return true;
     }
+
+    /**
+     * @param session Session.
+     */
+    public void clearHashTable(Session session) {
+        hashTbl = null;
+    }
+
     /**
      *
      */
@@ -403,8 +377,6 @@ public class HashJoinIndex extends BaseIndex {
         @Override public boolean next() {
             if (it.hasNext()) {
                 current = it.next();
-
-                nextCount++;
 
                 return true;
             }

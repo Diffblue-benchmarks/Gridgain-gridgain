@@ -50,12 +50,16 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
 
     private static boolean enforceJoinOrder;
 
+    @Override protected long getTestTimeout() {
+        return Long.MAX_VALUE;
+    }
+
     /** {@inheritDoc} */
     @SuppressWarnings("unchecked")
     @Override protected void beforeTest() throws Exception {
         super.beforeTest();
 
-        startGrids(1);
+        startGrids(3);
 
         IgniteCache cacheA = grid(0).createCache(new CacheConfiguration<Long, Long>()
             .setName("A")
@@ -161,11 +165,6 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
                     "WHERE A.JID = B.A_JID");
 
             log.info("+++ HASH=" + (t1-t0) + ", LOOP=" + (U.currentTimeMillis() - t1));
-
-            if (cnt % 10 == 0)
-                GridDebug.dumpHeap(String.format("hashj%03d.hprof", cnt / 10), true);
-
-            cnt++;
         }
     }
 
@@ -174,31 +173,26 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
      */
     @Test
     public void testJoinThree() {
-//        enforceJoinOrder = true;
-//        run("SELECT * FROM A, B USE INDEX(HASH_JOIN), C USE INDEX(HASH_JOIN) " +
-//            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
-
         int cnt = 0;
 
         while (true) {
-            enforceJoinOrder = true;
+            enforceJoinOrder = false;
             long t0 = U.currentTimeMillis();
 
             for (int i = 0; i < 1; ++i)
-                run("SELECT * FROM A, B USE INDEX(HASH_JOIN), C USE INDEX(HASH_JOIN) " +
-//                    "WHERE A.JID = B.ID AND A.JID=C.ID");
+                run("SELECT * FROM A, B, C " +
+//                    "WHERE A.JID = B.ID AND A.JID=C.ID ");
             "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
-//            enforceJoinOrder = false;
+            enforceJoinOrder = true;
             long t1 = U.currentTimeMillis();
-            log.info("+++ HASH=" + (t1-t0));
 
             for (int i = 0; i < 1; ++i)
                 run("SELECT * FROM B, A, C USE INDEX(HASH_JOIN) " +
 //                    "WHERE A.JID = B.ID AND A.JID=C.ID");
                     "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
-            log.info("+++ 2 HASH=" + (t1-t0) + ", 1 HASH =" + (U.currentTimeMillis() - t1));
+            log.info("+++ IDX=" + (t1-t0) + ", HASH =" + (U.currentTimeMillis() - t1));
 
             if (cnt % 10 == 0)
                 GridDebug.dumpHeap(String.format("hashj%03d.hprof", cnt / 10), true);
@@ -215,8 +209,6 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
             it.next();
             cnt++;
         }
-
-        log.info("+++ RS size=" + cnt);
     }
 
     /**
