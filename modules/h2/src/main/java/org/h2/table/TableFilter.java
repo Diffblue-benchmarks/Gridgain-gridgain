@@ -58,7 +58,7 @@ public class TableFilter implements ColumnResolver {
     private Index index;
     private final IndexHints indexHints;
     private int[] masks;
-    private int scanCount;
+    public int scanCount;
     private boolean evaluatable;
 
     /**

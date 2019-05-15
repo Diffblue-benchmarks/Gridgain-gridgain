@@ -22,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.apache.ignite.IgniteCache;
+import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.cache.CacheMode;
 import org.apache.ignite.cache.QueryEntity;
 import org.apache.ignite.cache.QueryIndex;
@@ -56,15 +57,16 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
 
         startGrids(1);
 
-        IgniteCache<Long, Long> cacheA = grid(0).createCache(new CacheConfiguration<Long, Long>()
+        IgniteCache cacheA = grid(0).createCache(new CacheConfiguration<Long, Long>()
             .setName("A")
             .setSqlSchema("TEST")
-            .setQueryEntities(Collections.singleton(new QueryEntity(Long.class, Long.class)
+            .setQueryEntities(Collections.singleton(new QueryEntity(Long.class.getTypeName(), "A_VAL")
                 .setTableName("A")
                 .addQueryField("ID", Long.class.getName(), null)
                 .addQueryField("JID", Long.class.getName(), null)
+                .addQueryField("VAL", Long.class.getName(), null)
                 .setKeyFieldName("ID")
-                .setValueFieldName("JID")
+                .setIndexes(Collections.singleton(new QueryIndex("JID", true, "A_JID")))
             )));
 
         IgniteCache cacheB = grid(0).createCache(new CacheConfiguration()
@@ -77,7 +79,7 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
                 .addQueryField("A_JID", Long.class.getName(), null)
                 .addQueryField("VAL0", String.class.getName(), null)
                 .setKeyFieldName("ID")
-                .setIndexes(Collections.singleton(new QueryIndex("A_JID")))
+                .setIndexes(Collections.singleton(new QueryIndex("A_JID", true, "B_A_JID")))
             )));
 
         IgniteCache cacheC = grid(0).createCache(new CacheConfiguration()
@@ -90,13 +92,16 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
                 .addQueryField("A_JID", Long.class.getName(), null)
                 .addQueryField("VAL0", String.class.getName(), null)
                 .setKeyFieldName("ID")
-                .setIndexes(Collections.singleton(new QueryIndex("A_JID")))
+                .setIndexes(Collections.singleton(new QueryIndex("A_JID", true, "C_A_JID")))
             )));
 
 
-        Map<Long, Long> batch = new HashMap<>();
+        Map<Long, BinaryObject> batch = new HashMap<>();
         for (long i = 0; i < LEFT_CNT; ++i) {
-            batch.put(i, i % RIGHT_CNT);
+            batch.put(i, grid(0).binary().builder("A_VAL")
+                .setField("JID", i % RIGHT_CNT)
+                .setField("VAL", i)
+                .build());
 
             if (batch.size() > 1000) {
                 cacheA.putAll(batch);
@@ -184,16 +189,16 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
 //                    "WHERE A.JID = B.ID AND A.JID=C.ID");
             "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
-            enforceJoinOrder = false;
+//            enforceJoinOrder = false;
             long t1 = U.currentTimeMillis();
             log.info("+++ HASH=" + (t1-t0));
 
             for (int i = 0; i < 1; ++i)
-                run("SELECT * FROM A, B, C " +
+                run("SELECT * FROM B, A, C USE INDEX(HASH_JOIN) " +
 //                    "WHERE A.JID = B.ID AND A.JID=C.ID");
-            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
+                    "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
-            log.info("+++ HASH=" + (t1-t0) + ", LOOP=" + (U.currentTimeMillis() - t1));
+            log.info("+++ 2 HASH=" + (t1-t0) + ", 1 HASH =" + (U.currentTimeMillis() - t1));
 
             if (cnt % 10 == 0)
                 GridDebug.dumpHeap(String.format("hashj%03d.hprof", cnt / 10), true);
@@ -205,8 +210,13 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
     public void run(String sql) {
         Iterator it = sql(sql).iterator();
 
-        while (it.hasNext())
+        int cnt = 0;
+        while (it.hasNext()) {
             it.next();
+            cnt++;
+        }
+
+        log.info("+++ RS size=" + cnt);
     }
 
     /**

@@ -165,4 +165,7 @@ public class GridH2ProxyIndex extends BaseIndex {
         // No-op. Will be removed when underlying index is removed
     }
 
+    @Override public void traceOnQueryEnd() {
+        ((BaseIndex)idx).traceOnQueryEnd();
+    }
 }

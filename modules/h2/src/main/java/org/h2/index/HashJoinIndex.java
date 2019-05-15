@@ -41,7 +41,6 @@ import org.h2.table.Table;
 import org.h2.table.TableFilter;
 import org.h2.value.Value;
 import org.h2.value.ValueArray;
-import org.h2.value.ValueNull;
 import org.h2.value.ValueStringIgnoreCase;
 
 /**
@@ -68,6 +67,14 @@ public class HashJoinIndex extends BaseIndex {
 
     /** Conditions. */
     private Set<ConditionChecker> condsCheckers;
+
+    public long nextCount;
+
+    public long findCounts;
+
+    public long findOk;
+
+    public long findTime;
 
     /**
      * @param table Table to build temporary hash join index.
@@ -151,9 +158,19 @@ public class HashJoinIndex extends BaseIndex {
         if (t.isDebugEnabled())
             t.debug("Clear hash table for {0}", table.getName());
 
-        System.out.printf("+++ Clear hash table for %s\n", table.getName());
+        System.out.printf("+++ Clear hash table for %s, findTime=%d, findCounts=%d, findOk=%d, nextCount=%d\n",
+            table.getName(),
+            findTime / 1000,
+            findCounts,
+            findOk,
+            nextCount);
 
         hashTbl = null;
+
+        findTime = 0;
+        findCounts = 0;
+        findOk = 0;
+        nextCount = 0;
     }
 
     /** {@inheritDoc} */
@@ -218,14 +235,20 @@ public class HashJoinIndex extends BaseIndex {
         if (hashTbl == null)
             build(session);
 
+        findCounts++;
+        long t0 = System.nanoTime();
         Value key = hashKey(first);
 
         List<Row> res = hashTbl.get(key);
 
         if (res == null)
-            res = Collections.emptyList();
+            return Cursor.EMPTY;
+
+        findOk++;
 
         cur.open(res.iterator());
+
+        findTime += System.nanoTime() - t0;
 
         return cur;
     }
@@ -344,9 +367,11 @@ public class HashJoinIndex extends BaseIndex {
      * @return {@code true} if the row is OK with all index conditions.
      */
     private boolean checkConditions(Session ses, Row r) {
-        for (ConditionChecker checker : condsCheckers) {
-            if (!checker.check(getTable(), r))
-                return false;
+        if (condsCheckers != null) {
+            for (ConditionChecker checker : condsCheckers) {
+                if (!checker.check(getTable(), r))
+                    return false;
+            }
         }
 
         return true;
@@ -354,7 +379,7 @@ public class HashJoinIndex extends BaseIndex {
     /**
      *
      */
-    private static class IteratorCursor implements Cursor {
+    private class IteratorCursor implements Cursor {
         /** Iterator. */
         private Iterator<Row> it;
 
@@ -378,6 +403,8 @@ public class HashJoinIndex extends BaseIndex {
         @Override public boolean next() {
             if (it.hasNext()) {
                 current = it.next();
+
+                nextCount++;
 
                 return true;
             }

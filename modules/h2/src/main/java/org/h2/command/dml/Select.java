@@ -26,6 +26,7 @@ import org.h2.expression.analysis.DataAnalysisOperation;
 import org.h2.expression.analysis.Window;
 import org.h2.expression.condition.Comparison;
 import org.h2.expression.condition.ConditionAndOr;
+import org.h2.index.BaseIndex;
 import org.h2.index.Cursor;
 import org.h2.index.HashJoinIndex;
 import org.h2.index.Index;
@@ -2000,8 +2001,17 @@ public class Select extends Query {
             @Override public void accept(TableFilter f) {
                 if (f.getIndex().getClass() == HashJoinIndex.class)
                     f.getIndex().close(session);
+                else if (f.getIndex() instanceof BaseIndex)
+                    ((BaseIndex)f.getIndex()).traceOnQueryEnd();
             }
         });
+
+        topTableFilter.visit(new TableFilterVisitor() {
+            @Override public void accept(TableFilter f) {
+                System.out.println("+++ " + f.getTable().getName() + ":" + f.scanCount);
+            }
+        });
+
     }
 
 }
