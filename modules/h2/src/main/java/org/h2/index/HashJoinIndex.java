@@ -112,6 +112,7 @@ public class HashJoinIndex extends BaseIndex {
      * @return true if Hash JOIN index is applicable for specifid masks: there is EQUALITY for only one column.
      */
     public static boolean isApplicable(Session ses, Table tbl, int[] masks, IndexHints indexHints) {
+        // TODO: add check the table's size
         return indexHints != null
             && indexHints.getAllowedIndexes() != null
             && indexHints.getAllowedIndexes().size() == 1
@@ -489,7 +490,7 @@ public class HashJoinIndex extends BaseIndex {
     private static class ConditionEqualChecker extends ConditionChecker {
         /** {@inheritDoc} */
         @Override boolean checkValue(Table tbl, Value o) {
-            return tbl.compareValues(v, o) == 0;
+            return tbl.compareValues(o, v) == 0;
         }
     }
 
@@ -499,7 +500,7 @@ public class HashJoinIndex extends BaseIndex {
     private static class ConditionBiggerEqualChecker extends ConditionChecker {
         /** {@inheritDoc} */
         @Override boolean checkValue(Table tbl, Value o) {
-            return tbl.compareValues(v, o) >= 0;
+            return tbl.compareValues(o, v) >= 0;
         }
     }
 
@@ -509,7 +510,7 @@ public class HashJoinIndex extends BaseIndex {
     private static class ConditionBiggerChecker extends ConditionChecker {
         /** {@inheritDoc} */
         @Override boolean checkValue(Table tbl, Value o) {
-            return tbl.compareValues(v, o) > 0;
+            return tbl.compareValues(o, v) > 0;
         }
     }
 
@@ -519,7 +520,7 @@ public class HashJoinIndex extends BaseIndex {
     private static class ConditionSmallerChecker extends ConditionChecker {
         /** {@inheritDoc} */
         @Override boolean checkValue(Table tbl, Value o) {
-            return tbl.compareValues(v, o) < 0;
+            return tbl.compareValues(o, v) < 0;
         }
     }
 
@@ -529,7 +530,7 @@ public class HashJoinIndex extends BaseIndex {
     private static class ConditionSmallerEqualChecker extends ConditionChecker {
         /** {@inheritDoc} */
         @Override boolean checkValue(Table tbl, Value o) {
-            return tbl.compareValues(v, o) <= 0;
+            return tbl.compareValues(o, v) <= 0;
         }
     }
 }

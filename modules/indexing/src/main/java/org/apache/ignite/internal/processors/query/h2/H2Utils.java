@@ -437,8 +437,6 @@ public class H2Utils {
         s.setJoinBatchEnabled(distributedJoins);
         s.setLazyQueryExecution(lazy);
         s.setHashJoinEnabled(true);
-
-//        s.getTrace().setLevel(9);
     }
 
     /**

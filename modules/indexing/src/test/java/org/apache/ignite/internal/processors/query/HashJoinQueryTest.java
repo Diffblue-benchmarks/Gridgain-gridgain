@@ -25,52 +25,42 @@ import org.apache.ignite.IgniteCache;
 import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.cache.CacheMode;
 import org.apache.ignite.cache.QueryEntity;
-import org.apache.ignite.cache.QueryIndex;
-import org.apache.ignite.cache.affinity.rendezvous.RendezvousAffinityFunction;
 import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.SqlFieldsQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.processors.cache.index.AbstractIndexingCommonTest;
-import org.apache.ignite.internal.util.GridDebug;
 import org.apache.ignite.internal.util.typedef.internal.U;
-import org.apache.ignite.testframework.GridTestUtils;
-import org.h2.result.LazyResult;
-import org.h2.result.ResultInterface;
 import org.junit.Test;
 
 /**
- * Tests for local query execution in lazy mode.
+ * Tests by simple benchmark hash join.
  */
 public class HashJoinQueryTest extends AbstractIndexingCommonTest {
     /** Keys counts at the RIGHT table. */
-    private static final int RIGHT_CNT = 1000;
+    private static final int RIGHT_CNT = 100;
+
+    /** Multiplier: one row at the RIGHT table is related to MULT  rows at the LEFT table. */
+    private static final int MULT = 500;
 
     /** Keys counts at the LEFT table. */
-    private static final int LEFT_CNT = RIGHT_CNT * 500;
-
-    private static boolean enforceJoinOrder;
-
-    @Override protected long getTestTimeout() {
-        return Long.MAX_VALUE;
-    }
+    private static final int LEFT_CNT = RIGHT_CNT * MULT;
 
     /** {@inheritDoc} */
     @SuppressWarnings("unchecked")
     @Override protected void beforeTest() throws Exception {
         super.beforeTest();
 
-        startGrids(3);
+        startGrids(1);
 
         IgniteCache cacheA = grid(0).createCache(new CacheConfiguration<Long, Long>()
             .setName("A")
             .setSqlSchema("TEST")
             .setQueryEntities(Collections.singleton(new QueryEntity(Long.class.getTypeName(), "A_VAL")
-                .setTableName("A")
-                .addQueryField("ID", Long.class.getName(), null)
-                .addQueryField("JID", Long.class.getName(), null)
-                .addQueryField("VAL", Long.class.getName(), null)
-                .setKeyFieldName("ID")
-                .setIndexes(Collections.singleton(new QueryIndex("JID", true, "A_JID")))
+                    .setTableName("A")
+                    .addQueryField("ID", Long.class.getName(), null)
+                    .addQueryField("JID", Long.class.getName(), null)
+                    .addQueryField("VAL", Long.class.getName(), null)
+                    .setKeyFieldName("ID")
             )));
 
         IgniteCache cacheB = grid(0).createCache(new CacheConfiguration()
@@ -78,12 +68,11 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
             .setName("B")
             .setSqlSchema("TEST")
             .setQueryEntities(Collections.singleton(new QueryEntity(Long.class.getName(), "B_VAL")
-                .setTableName("B")
-                .addQueryField("ID", Long.class.getName(), null)
-                .addQueryField("A_JID", Long.class.getName(), null)
-                .addQueryField("VAL0", String.class.getName(), null)
-                .setKeyFieldName("ID")
-                .setIndexes(Collections.singleton(new QueryIndex("A_JID", true, "B_A_JID")))
+                    .setTableName("B")
+                    .addQueryField("ID", Long.class.getName(), null)
+                    .addQueryField("A_JID", Long.class.getName(), null)
+                    .addQueryField("VAL0", String.class.getName(), null)
+                    .setKeyFieldName("ID")
             )));
 
         IgniteCache cacheC = grid(0).createCache(new CacheConfiguration()
@@ -91,14 +80,12 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
             .setName("C")
             .setSqlSchema("TEST")
             .setQueryEntities(Collections.singleton(new QueryEntity(Long.class.getName(), "C_VAL")
-                .setTableName("C")
-                .addQueryField("ID", Long.class.getName(), null)
-                .addQueryField("A_JID", Long.class.getName(), null)
-                .addQueryField("VAL0", String.class.getName(), null)
-                .setKeyFieldName("ID")
-                .setIndexes(Collections.singleton(new QueryIndex("A_JID", true, "C_A_JID")))
+                    .setTableName("C")
+                    .addQueryField("ID", Long.class.getName(), null)
+                    .addQueryField("A_JID", Long.class.getName(), null)
+                    .addQueryField("VAL0", String.class.getName(), null)
+                    .setKeyFieldName("ID")
             )));
-
 
         Map<Long, BinaryObject> batch = new HashMap<>();
         for (long i = 0; i < LEFT_CNT; ++i) {
@@ -122,17 +109,14 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
         for (long i = 0; i < RIGHT_CNT; ++i)
             cacheB.put(i, grid(0).binary().builder("B_VAL")
                 .setField("A_JID", i)
-                .setField("VAL0", "val" + i)
+                .setField("VAL0", String.format("val%03d", i))
                 .build());
 
         for (long i = 0; i < RIGHT_CNT; ++i)
             cacheC.put(i, grid(0).binary().builder("C_VAL")
                 .setField("A_JID", i)
-                .setField("VAL0", "val" + i)
+                .setField("VAL0", String.format("val%03d", i))
                 .build());
-
-        log.info("+++ FILL OK");
-
     }
 
     /** {@inheritDoc} */
@@ -146,77 +130,99 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
      * Test local query execution.
      */
     @Test
-    public void testJoinTwo() {
-        int cnt = 0;
+    public void testHashJoin() {
+        assertEquals(LEFT_CNT, sql(true,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID").getAll().size());
 
-        while (true) {
-            enforceJoinOrder = true;
-            long t0 = U.currentTimeMillis();
+        assertEquals((RIGHT_CNT - 10) * MULT , sql(true,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID AND B.VAL0 > 'val009'").getAll().size());
 
-            for (int i = 0; i < 1; ++i)
-                run("SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
-                    "WHERE A.JID = B.A_JID");
+        assertEquals(10 * MULT , sql(true,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID AND B.VAL0 > 'val009' and B.ID < 20").getAll().size());
 
-            enforceJoinOrder = false;
-            long t1 = U.currentTimeMillis();
+        assertEquals(12 * MULT , sql(true,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID AND B.VAL0 >= 'val009' AND B.ID <= 20").getAll().size());
 
-            for (int i = 0; i < 1; ++i)
-                run("SELECT * FROM A, B " +
-                    "WHERE A.JID = B.A_JID");
+        assertEquals(MULT , sql(true,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID AND B.VAL0 = 'val009'").getAll().size());
 
-            log.info("+++ HASH=" + (t1-t0) + ", LOOP=" + (U.currentTimeMillis() - t1));
-        }
+        assertEquals(MULT , sql(true,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID AND B.VAL0 = 'val009'").getAll().size());
+    }
+
+
+    /**
+     * Test local query execution.
+     */
+    @Test
+    public void testSimpleBenchmarkJoinTwoTables() {
+        long tHashJoin = sqlDuration(true, 10,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID");
+
+        long tNestedLoops = sqlDuration(false, 3,
+            "SELECT * FROM A, B " +
+                "WHERE A.JID = B.A_JID");
+
+        assertTrue("Hash join is slow than nested loops: [HJ time=" + tHashJoin + ", NL time=" + tNestedLoops + ']',
+            tNestedLoops > tHashJoin);
+
+        log.info("Query duration: [HJ time=" + tHashJoin + ", NL time=" + tNestedLoops + ']');
     }
 
     /**
      * Test local query execution.
      */
     @Test
-    public void testJoinThree() {
-        int cnt = 0;
+    public void testSimpleBenchmarkJoinThreeTables() {
+        long tHashJoin = sqlDuration(true, 10,
+            "SELECT * FROM A, B USE INDEX(HASH_JOIN), C USE INDEX(HASH_JOIN) " +
+                "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
-        while (true) {
-            enforceJoinOrder = false;
-            long t0 = U.currentTimeMillis();
+        long tNestedLoops = sqlDuration(false, 1,
+            "SELECT * FROM A, B, C " +
+                "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
 
-            for (int i = 0; i < 1; ++i)
-                run("SELECT * FROM A, B, C " +
-//                    "WHERE A.JID = B.ID AND A.JID=C.ID ");
-            "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
+        assertTrue("Hash join is slow than nested loops: [HJ time=" + tHashJoin + ", NL time=" + tNestedLoops + ']',
+            tNestedLoops > tHashJoin);
 
-            enforceJoinOrder = true;
-            long t1 = U.currentTimeMillis();
-
-            for (int i = 0; i < 1; ++i)
-                run("SELECT * FROM B, A, C USE INDEX(HASH_JOIN) " +
-//                    "WHERE A.JID = B.ID AND A.JID=C.ID");
-                    "WHERE A.JID = B.A_JID AND A.JID=C.A_JID");
-
-            log.info("+++ IDX=" + (t1-t0) + ", HASH =" + (U.currentTimeMillis() - t1));
-
-            if (cnt % 10 == 0)
-                GridDebug.dumpHeap(String.format("hashj%03d.hprof", cnt / 10), true);
-
-            cnt++;
-        }
-    }
-
-    public void run(String sql) {
-        Iterator it = sql(sql).iterator();
-
-        int cnt = 0;
-        while (it.hasNext()) {
-            it.next();
-            cnt++;
-        }
+        log.info("Query duration: [HJ time=" + tHashJoin + ", NL time=" + tNestedLoops + ']');
     }
 
     /**
+     * Executes SQL statement 'count' times and calculate average duration.
+     *
+     * @return Average duration of SQL statement.
+     */
+    public long sqlDuration(boolean enforceJoinOrder, int count, String sql, Object... args) {
+        long t0 = U.currentTimeMillis();
+
+        for (int i = 0; i < count; ++i) {
+            Iterator it = sql(enforceJoinOrder, sql).iterator();
+
+            int cnt = 0;
+            while (it.hasNext()) {
+                it.next();
+                cnt++;
+            }
+        }
+
+        return (U.currentTimeMillis() - t0) / count;
+    }
+
+    /**
+     * @param enforceJoinOrder Enforce join order mode.
      * @param sql SQL query.
      * @param args Query parameters.
      * @return Results cursor.
      */
-    private FieldsQueryCursor<List<?>> sql(String sql, Object ... args) {
+    private FieldsQueryCursor<List<?>> sql(boolean enforceJoinOrder, String sql, Object... args) {
         return grid(0).context().query().querySqlFields(new SqlFieldsQuery(sql)
             .setSchema("TEST")
             .setLazy(true)
