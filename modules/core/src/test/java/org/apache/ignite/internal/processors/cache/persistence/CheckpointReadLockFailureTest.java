@@ -108,17 +108,17 @@ public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
         GridCacheDatabaseSharedManager db = (GridCacheDatabaseSharedManager)ig.context().cache().context().database();
 
         IgniteInternalFuture acquireWriteLock = GridTestUtils.runAsync(() -> {
-            db.checkpointLock.writeLock().lock();
+            db.checkpointLock.writeLock();
 
             try {
                 doSleep(Long.MAX_VALUE);
             }
             finally {
-                db.checkpointLock.writeLock().unlock();
+                db.checkpointLock.writeUnlock();
             }
         });
 
-        GridTestUtils.waitForCondition(() -> db.checkpointLock.writeLock().isHeldByCurrentThread(), 5000);
+        GridTestUtils.waitForCondition(() -> db.checkpointLock.isHeldByCurrentThread(), 5000);
 
         IgniteInternalFuture acquireReadLock = GridTestUtils.runAsync(() -> {
             db.checkpointReadLock();
@@ -132,6 +132,46 @@ public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
         acquireReadLock.get(5, TimeUnit.SECONDS);
 
         GridTestUtils.waitForCondition(acquireWriteLock::isCancelled, 5000);
+
+        stopGrid(0);
+    }
+
+    /**
+     * @throws Exception If failed.
+     */
+    @Test
+    public void testFailureTypeOnTimeout1() throws Exception {
+        IgniteEx ig = startGrid(0);
+
+        ig.cluster().active(true);
+
+        GridCacheDatabaseSharedManager db = (GridCacheDatabaseSharedManager)ig.context().cache().context().database();
+
+        IgniteInternalFuture acquireWriteLock = GridTestUtils.runAsync(() -> {
+            db.checkpointLock.readLock();
+
+            try {
+                doSleep(Long.MAX_VALUE);
+            }
+            finally {
+                db.checkpointLock.readUnlock();
+            }
+        });
+
+        IgniteInternalFuture acquireWriteLock1 = GridTestUtils.runAsync(() -> {
+            db.checkpointLock.readLock();
+
+            try {
+                doSleep(Long.MAX_VALUE);
+            }
+            finally {
+                db.checkpointLock.readUnlock();
+            }
+        });
+
+        GridTestUtils.waitForCondition(() -> db.checkpointLock.isHeldByCurrentThread(), 5000);
+
+        db.checkpointLock.writeLock();
 
         stopGrid(0);
     }

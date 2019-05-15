@@ -158,6 +158,7 @@ import org.apache.ignite.internal.stat.IoStatisticsHolderNoOp;
 import org.apache.ignite.internal.util.GridConcurrentHashSet;
 import org.apache.ignite.internal.util.GridMultiCollectionWrapper;
 import org.apache.ignite.internal.util.GridReadOnlyArrayView;
+import org.apache.ignite.internal.util.GridStringBuilder;
 import org.apache.ignite.internal.util.IgniteUtils;
 import org.apache.ignite.internal.util.StripedExecutor;
 import org.apache.ignite.internal.util.future.CountDownFuture;
@@ -297,8 +298,8 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
     /** For testing only. */
     private volatile GridFutureAdapter<Void> enableChangeApplied;
 
-    /** */
-    ReentrantReadWriteLock checkpointLock = new ReentrantReadWriteLock();
+    /** Checkpont lock wrapper. */
+    CPLockWrapper checkpointLock;
 
     /** */
     private long checkpointFreq;
@@ -542,6 +543,8 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         snapshotMgr = cctx.snapshot();
 
         final GridKernalContext kernalCtx = cctx.kernalContext();
+
+        checkpointLock = new CPLockWrapper(kernalCtx);
 
         if (!kernalCtx.clientNode()) {
             kernalCtx.internalSubscriptionProcessor().registerDatabaseListener(new MetastorageRecoveryLifecycle());
@@ -1072,13 +1075,13 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
     /** {@inheritDoc} */
     @Override protected void onKernalStop0(boolean cancel) {
-        checkpointLock.writeLock().lock();
+        checkpointLock.writeLock();
 
         try {
             stopping = true;
         }
         finally {
-            checkpointLock.writeLock().unlock();
+            checkpointLock.writeUnlock();
         }
 
         shutdownCheckpointer(cancel);
@@ -1579,7 +1582,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
      * @throws IgniteException If failed.
      */
     @Override public void checkpointReadLock() {
-        if (checkpointLock.writeLock().isHeldByCurrentThread())
+        if (checkpointLock.isHeldByCurrentThread())
             return;
 
         long timeout = checkpointReadLockTimeout;
@@ -1596,12 +1599,12 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
                     try {
                         if (timeout > 0) {
-                            if (!checkpointLock.readLock().tryLock(timeout - (U.currentTimeMillis() - start),
+                            if (!checkpointLock.tryLock(timeout - (U.currentTimeMillis() - start),
                                 TimeUnit.MILLISECONDS))
                                 failCheckpointReadLock();
                         }
                         else
-                            checkpointLock.readLock().lock();
+                            checkpointLock.readLock();
                     }
                     catch (InterruptedException e) {
                         interruped = true;
@@ -1610,7 +1613,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                     }
 
                     if (stopping) {
-                        checkpointLock.readLock().unlock();
+                        checkpointLock.readUnlock();
 
                         throw new IgniteException(new NodeStoppingException("Failed to perform cache update: node is stopping."));
                     }
@@ -1618,7 +1621,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                     if (checkpointLock.getReadHoldCount() > 1 || safeToUpdatePageMemories())
                         break;
                     else {
-                        checkpointLock.readLock().unlock();
+                        checkpointLock.readUnlock();
 
                         if (timeout > 0 && U.currentTimeMillis() - start >= timeout)
                             failCheckpointReadLock();
@@ -1702,10 +1705,10 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
      * Releases the checkpoint read lock.
      */
     @Override public void checkpointReadUnlock() {
-        if (checkpointLock.writeLock().isHeldByCurrentThread())
+        if (checkpointLock.isHeldByCurrentThread())
             return;
 
-        checkpointLock.readLock().unlock();
+        checkpointLock.readUnlock();
 
         if (checkpointer != null) {
             Collection<DataRegion> dataRegs = context().database().dataRegions();
@@ -4179,7 +4182,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
             tracker.onLockWaitStart();
 
-            checkpointLock.writeLock().lock();
+            checkpointLock.writeLock();
 
             try {
                 assert curCpProgress == curr : "Concurrent checkpoint begin should not be happened";
@@ -4233,7 +4236,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                 }
             }
             finally {
-                checkpointLock.writeLock().unlock();
+                checkpointLock.writeUnlock();
 
                 tracker.onLockRelease();
             }
@@ -4342,7 +4345,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
          * Take read lock for internal use.
          */
         private void internalReadUnlock() {
-            checkpointLock.readLock().unlock();
+            checkpointLock.readUnlock();
 
             if (ASSERTION_ENABLED)
                 CHECKPOINT_LOCK_HOLD_COUNT.set(CHECKPOINT_LOCK_HOLD_COUNT.get() - 1);
@@ -4352,7 +4355,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
          * Release read lock.
          */
         private void internalReadLock() {
-            checkpointLock.readLock().lock();
+            checkpointLock.readLock();
 
             if (ASSERTION_ENABLED)
                 CHECKPOINT_LOCK_HOLD_COUNT.set(CHECKPOINT_LOCK_HOLD_COUNT.get() + 1);
@@ -5885,6 +5888,104 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         /** */
         private CheckpointReadLockTimeoutException(String msg) {
             super(msg);
+        }
+    }
+
+    /** */
+    static class CPLockWrapper {
+        /** */
+        private static final ReentrantReadWriteLock checkpointLock = new ReentrantReadWriteLock();
+
+        /** */
+        private static volatile boolean wLockActive;
+
+        /** */
+        private static Set<Long> readHolders = new GridConcurrentHashSet<>();
+
+        /** */
+        private final IgniteLogger log;
+
+        /** */
+        private CPLockWrapper(GridKernalContext kctx) {
+            IgniteConfiguration cfg = kctx.config();
+
+            log = kctx.cache().context().logger(getClass());
+
+            long checkpointFreq = cfg.getDataStorageConfiguration().getCheckpointFrequency();
+
+            long cpLockWaitThreshold = Math.min(checkpointFreq / 2, 5_000);
+
+            kctx.timeout().schedule(new Runnable() {
+                @Override public void run() {
+                    if (wLockActive) {
+                        if (!readHolders.isEmpty()) {
+                            GridStringBuilder sb = new GridStringBuilder();
+
+                            sb.a("Checkpoint writeLock can`t be aquired more than " + cpLockWaitThreshold + " ms." + U.nl());
+                            sb.a("Checkpoint readLock holders:" + U.nl());
+
+                            readHolders.forEach(t -> U.printStackTrace(t, sb));
+
+                            U.warn(log, sb.toString());
+                        }
+                    }
+                }
+            }, cpLockWaitThreshold, cpLockWaitThreshold);
+        }
+
+        /** */
+        @SuppressWarnings("LockAcquiredButNotSafelyReleased")
+        void readLock() {
+            checkpointLock.readLock().lock();
+
+            readHolders.add(Thread.currentThread().getId());
+        }
+
+        /** */
+        void readUnlock() {
+            checkpointLock.readLock().unlock();
+
+            readHolders.remove(Thread.currentThread().getId());
+        }
+
+        /** */
+        public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
+            boolean pr = checkpointLock.readLock().tryLock(timeout, unit);
+
+            if (pr)
+                readHolders.add(Thread.currentThread().getId());
+
+            return pr;
+        }
+
+        /** */
+        @SuppressWarnings("LockAcquiredButNotSafelyReleased")
+        void writeLock() {
+            wLockActive = true;
+
+            checkpointLock.writeLock().lock();
+        }
+
+        /** */
+        void writeUnlock() {
+            wLockActive = false;
+
+            checkpointLock.writeLock().unlock();
+        }
+
+        /** */
+        boolean isHeldByCurrentThread() {
+            return checkpointLock.writeLock().isHeldByCurrentThread();
+        }
+
+        /** */
+        private int getReadHoldCount() {
+            return checkpointLock.getReadHoldCount();
+        }
+
+        /** */
+        private boolean isWriteLockedByCurrentThread() {
+            return checkpointLock.isWriteLockedByCurrentThread();
         }
     }
 }
