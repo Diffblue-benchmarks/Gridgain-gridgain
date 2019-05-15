@@ -154,6 +154,10 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
         assertEquals(MULT , sql(true,
             "SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
                 "WHERE A.JID = B.A_JID AND B.VAL0 = 'val009'").getAll().size());
+
+        System.out.println("+++ " + sql(true,
+            "EXPLAIN SELECT * FROM A, B USE INDEX(HASH_JOIN) " +
+            "WHERE A.JID = B.A_JID AND A.JID=B.ID AND B.VAL0 >= 'val009' AND B.ID <= 20").getAll());
     }
 
 

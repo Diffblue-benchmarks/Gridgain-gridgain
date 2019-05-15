@@ -27,6 +27,7 @@ import java.util.Set;
 import org.h2.command.dml.AllColumnsForPlan;
 import org.h2.engine.DbObject;
 import org.h2.engine.Session;
+import org.h2.expression.Expression;
 import org.h2.expression.ExpressionVisitor;
 import org.h2.expression.condition.Comparison;
 import org.h2.message.DbException;
@@ -62,8 +63,8 @@ public class HashJoinIndex extends BaseIndex {
     /** Ignorecase flags for each column of EQUI join. */
     private boolean[] ignorecase;
 
-    /** Index conditions. */
-    private ArrayList<IndexCondition> indexConditions;
+    /** Index to fill hash table. */
+    private Index fillFromIndex;
 
     /** Conditions. */
     private Set<ConditionChecker> condsCheckers;
@@ -223,6 +224,41 @@ public class HashJoinIndex extends BaseIndex {
         return cur;
     }
 
+    /** {@inheritDoc} */
+    @Override public String getPlanSQL() {
+        StringBuilder builder = new StringBuilder("HASH_JOIN ");
+
+        builder.append("[fillFromIndex=").append(fillFromIndex.getName());
+
+        builder.append(", hashedCols=[");
+        for (int i = 0; i < colIds.length; ++i) {
+            if (i > 0)
+                builder.append(", ");
+
+            builder.append(table.getColumn(colIds[i]).getName());
+        }
+        builder.append("]");
+
+        if (condsCheckers != null && !condsCheckers.isEmpty()) {
+            builder.append(", filters=[");
+
+            int cnt = 0;
+
+            for (ConditionChecker c : condsCheckers) {
+                if (cnt > 0)
+                    builder.append(", ");
+
+                builder.append(c.getSQL());
+
+                cnt++;
+            }
+            builder.append("]");
+        }
+        builder.append("]");
+
+        return builder.toString();
+    }
+
     /**
      * @return {@code true} if the hash table has been built already.
      */
@@ -237,13 +273,6 @@ public class HashJoinIndex extends BaseIndex {
     public void prepare(Session ses, ArrayList<IndexCondition> indexConditions) {
         assert hashTbl == null;
 
-        this.indexConditions = indexConditions;
-    }
-
-    /**
-     * @param ses Session.
-     */
-    private void prepare0(Session ses) {
         List<Integer> ids = new ArrayList<>();
 
         for (IndexCondition idxCond : indexConditions) {
@@ -270,6 +299,8 @@ public class HashJoinIndex extends BaseIndex {
                 && ses.getDatabase().getIgnoreCase()
                 || table.getColumn(colIds[i]).getType().getValueType() == Value.STRING_IGNORECASE;
         }
+
+        fillFromIndex = table.getScanIndex(ses);
     }
 
     /**
@@ -278,11 +309,12 @@ public class HashJoinIndex extends BaseIndex {
     private void build(Session ses) {
         long t0 = System.currentTimeMillis();
 
-        prepare0(ses);
+        if (condsCheckers != null){
+            for (ConditionChecker c : condsCheckers)
+                c.calculateValue(ses);
+        }
 
-        Index idx = table.getScanIndex(ses);
-
-        Cursor cur = idx.find(ses, null, null);
+        Cursor cur = fillFromIndex.find(ses, null, null);
 
         hashTbl = new HashMap<>();
 
@@ -413,6 +445,9 @@ public class HashJoinIndex extends BaseIndex {
         /** Value to compare. */
         Value v;
 
+        /** Value expr. */
+        IndexCondition idxCond;
+
         /**
          * @param tbl Table to compare.
          * @param r Row to check condition.
@@ -425,6 +460,20 @@ public class HashJoinIndex extends BaseIndex {
                 return false;
 
             return checkValue(tbl, o);
+        }
+
+        /**
+         * @param ses Session.
+         */
+        void calculateValue(Session ses) {
+            v = idxCond.getCurrentValue(ses);
+        }
+
+        /**
+         * @return SQL string.
+         */
+        public String getSQL() {
+            return idxCond.getSQL(false);
         }
 
         /**
@@ -476,8 +525,7 @@ public class HashJoinIndex extends BaseIndex {
 
             if (checker != null) {
                 checker.colId = idxCond.getColumn().getColumnId();
-
-                checker.v = idxCond.getCurrentValue(ses);
+                checker.idxCond = idxCond;
             }
 
             return checker;

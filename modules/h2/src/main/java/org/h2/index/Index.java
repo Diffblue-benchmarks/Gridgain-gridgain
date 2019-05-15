@@ -20,7 +20,6 @@ import org.h2.table.TableFilter;
  * An index. Indexes are used to speed up searching data.
  */
 public interface Index extends SchemaObject {
-
     /**
      * Get the message to show in a EXPLAIN statement.
      *
