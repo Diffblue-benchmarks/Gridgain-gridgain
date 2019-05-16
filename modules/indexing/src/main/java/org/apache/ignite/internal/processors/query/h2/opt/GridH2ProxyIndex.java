@@ -164,4 +164,5 @@ public class GridH2ProxyIndex extends BaseIndex {
     @Override public void removeChildrenAndResources(Session session) {
         // No-op. Will be removed when underlying index is removed
     }
+
 }

@@ -177,7 +177,6 @@ public class H2PkHashIndex extends GridH2IndexBase {
 
         long res = 0;
 
-        cctx.logger("PK_HASH").info("+++ PK ROW COUNT");
         while (cursor.next())
             res++;
 

@@ -309,9 +309,13 @@ public class Select extends Query {
         if (result == null) {
             return lazyResult;
         }
+
         while (lazyResult.next()) {
             result.addRow(lazyResult.currentRow());
         }
+
+        lazyResult.close();
+
         return null;
     }
 

@@ -171,6 +171,10 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
     /** Enable HASH_JOIN fake index. */
     private boolean hashJoinEnabled;
 
+    /** Max size of the table when HASH JOIN is allowed. */
+    private int hashJoinMaxTableSize = Constants.HASH_JOIN_MAX_TABLE_SIZE_DFLT;
+
+
     public Session(Database database, User user, int id) {
         this.database = database;
         this.queryTimeout = database.getSettings().maxQueryTimeout;
@@ -1907,6 +1911,14 @@ public class Session extends SessionWithState implements TransactionStore.Rollba
 
     public void setHashJoinEnabled(boolean enable) {
         hashJoinEnabled = enable;
+    }
+
+    public int getHashJoinMaxTableSize() {
+        return hashJoinMaxTableSize;
+    }
+
+    public void setHashJoinMaxTableSize(int hashJoinMaxTableSize) {
+        this.hashJoinMaxTableSize = hashJoinMaxTableSize;
     }
 
     @Override

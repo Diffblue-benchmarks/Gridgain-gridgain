@@ -17,7 +17,6 @@
 package org.h2.index;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -27,7 +26,6 @@ import java.util.Set;
 import org.h2.command.dml.AllColumnsForPlan;
 import org.h2.engine.DbObject;
 import org.h2.engine.Session;
-import org.h2.expression.Expression;
 import org.h2.expression.ExpressionVisitor;
 import org.h2.expression.condition.Comparison;
 import org.h2.message.DbException;
@@ -66,6 +64,12 @@ public class HashJoinIndex extends BaseIndex {
     /** Index to fill hash table. */
     private Index fillFromIndex;
 
+    /** The first row to open cursor on #fillFromIndex. */
+    private SearchRow first;
+
+    /** The last row to open cursor on #fillFromIndex. */
+    private SearchRow last ;
+
     /** Conditions. */
     private Set<ConditionChecker> condsCheckers;
 
@@ -75,15 +79,6 @@ public class HashJoinIndex extends BaseIndex {
     public HashJoinIndex(Table table) {
         super(table, 0, HASH_JOIN,
             IndexColumn.wrap(table.getColumns()), IndexType.createUnique(false, true));
-    }
-
-    /**
-     * @param key Key value.
-     * @param ignorecase Flag to ignorecase.
-     * @return Ignorecase wrapper Value.
-     */
-    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
-        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
     }
 
     /**
@@ -226,6 +221,10 @@ public class HashJoinIndex extends BaseIndex {
 
     /** {@inheritDoc} */
     @Override public String getPlanSQL() {
+        // Used by debug print before end of prepare.
+        if (fillFromIndex == null)
+            return "HASH_JOIN";
+
         StringBuilder builder = new StringBuilder("HASH_JOIN ");
 
         builder.append("[fillFromIndex=").append(fillFromIndex.getName());
@@ -275,23 +274,19 @@ public class HashJoinIndex extends BaseIndex {
 
         List<Integer> ids = new ArrayList<>();
 
+        ArrayList<IndexCondition> filterIndexCond = new ArrayList<>();
+
         for (IndexCondition idxCond : indexConditions) {
             if (isEquiJoinCondition(idxCond))
                 ids.add(idxCond.getColumn().getColumnId());
-            else {
-                ConditionChecker checker = ConditionChecker.create(ses, idxCond);
-
-                if (condsCheckers == null && checker  != null)
-                    condsCheckers = new HashSet<>();
-
-                if (checker != null)
-                    condsCheckers.add(checker);
-            }
+            else
+                filterIndexCond.add(idxCond);
         }
 
         colIds = new int[ids.size()];
         ignorecase = new boolean[ids.size()];
 
+        // Prepare join col IDs and ignorecase flags.
         for (int i = 0; i < colIds.length; ++i) {
             colIds[i] = ids.get(i);
 
@@ -300,8 +295,30 @@ public class HashJoinIndex extends BaseIndex {
                 || table.getColumn(colIds[i]).getType().getValueType() == Value.STRING_IGNORECASE;
         }
 
-        fillFromIndex = table.getScanIndex(ses);
+         prepareFillFromIndex(ses, filterIndexCond);
+
+        // Prepare filter condition.
+        for (IndexCondition idxCond : filterIndexCond) {
+            ConditionChecker checker = ConditionChecker.create(ses, idxCond);
+
+            if (condsCheckers == null && checker != null)
+                condsCheckers = new HashSet<>();
+
+            if (checker != null)
+                condsCheckers.add(checker);
+        }
     }
+
+    /**
+     * @param ses Session.
+     * @param indexConditions Index conditions to choose hte best index to fill hash table.
+     */
+    private void prepareFillFromIndex(Session ses, ArrayList<IndexCondition> indexConditions) {
+        fillFromIndex = table.getScanIndex(ses);
+        first = null;
+        last = null;
+    }
+
 
     /**
      * @param ses Session.
@@ -314,7 +331,7 @@ public class HashJoinIndex extends BaseIndex {
                 c.calculateValue(ses);
         }
 
-        Cursor cur = fillFromIndex.find(ses, null, null);
+        Cursor cur = fillFromIndex.find(ses, first, last);
 
         hashTbl = new HashMap<>();
 
@@ -358,6 +375,15 @@ public class HashJoinIndex extends BaseIndex {
             key[i] = ignorecaseIfNeed(r.getValue(colIds[i]), ignorecase[i]);
 
         return ValueArray.get(key);
+    }
+
+    /**
+     * @param key Key value.
+     * @param ignorecase Flag to ignorecase.
+     * @return Ignorecase wrapper Value.
+     */
+    private static Value ignorecaseIfNeed(Value key, boolean ignorecase) {
+        return ignorecase ? ValueStringIgnoreCase.get(key.getString()) : key;
     }
 
     /**

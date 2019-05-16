@@ -60,8 +60,6 @@ public class TestHashJoin {
             RIGHT_CNT,
             RIGHT_CNT % 4,
             null, null, null);
-
-        sql("SET TRACE_LEVEL_SYSTEM_OUT 10");
     }
 
     /**
@@ -76,18 +74,13 @@ public class TestHashJoin {
     }
 
     /**
-     * Check query plan. HASH_JOIN index must be
+     * Check query plan. HASH_JOIN index must be chosen.
      * @throws Exception On error.
      */
     @Test
     public void testHashJoin() throws Exception {
-        assertTrue(sql("EXPLAIN SELECT * FROM A, B WHERE A.JID=B.A_JID")
-            .contains("PUBLIC.HASH_JOIN: A_JID = A.JID"));
-
         assertTrue(sql("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) WHERE A.JID=B.A_JID")
-            .contains("PUBLIC.HASH_JOIN: A_JID = A.JID"));
-
-        System.out.println(sql("SELECT * FROM A, B WHERE A.JID=B.A_JID"));
+            .contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]]"));
     }
 
     /**
@@ -95,16 +88,11 @@ public class TestHashJoin {
      */
     @Test
     public void testHashJoinFilterCondition() throws Exception {
-        assertTrue(sql("EXPLAIN SELECT * FROM A, B WHERE A.JID = B.A_JID AND B.val0 > ?", 5)
-            .contains("/* PUBLIC.HASH_JOIN: VAL0 > ?1\n" +
-                "        AND A_JID = A.JID\n" +
-                "     */"));
+        assertTrue(sql("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) " +
+            "WHERE A.JID = B.A_JID AND B.val0 > ?", 5)
+            .contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID], filters=[VAL0 > ?1]]"));
     }
 
-    @Test
-    public void testDbg() throws Exception {
-        System.out.println(sql("SELECT * FROM A, B USE INDEX (HASH_JOIN) WHERE B.A_JID = A.JID AND B.val1 = 'qwe' "));
-    }
     /**
      * @throws Exception On error.
      */

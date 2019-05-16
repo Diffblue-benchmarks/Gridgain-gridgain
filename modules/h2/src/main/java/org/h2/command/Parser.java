@@ -202,6 +202,7 @@ import org.h2.expression.function.Function;
 import org.h2.expression.function.FunctionCall;
 import org.h2.expression.function.JavaFunction;
 import org.h2.expression.function.TableFunction;
+import org.h2.index.HashJoinIndex;
 import org.h2.index.Index;
 import org.h2.message.DbException;
 import org.h2.result.SortOrder;
@@ -1907,8 +1908,8 @@ public class Parser {
         if (!readIf(CLOSE_PAREN)) {
             do {
                 String indexName = readIdentifierWithSchema();
-                if ("HASH_JOIN".equalsIgnoreCase(indexName)) {
-                    indexNames.add("HASH_JOIN");
+                if (HashJoinIndex.HASH_JOIN.equalsIgnoreCase(indexName)) {
+                    indexNames.add(HashJoinIndex.HASH_JOIN);
                 }
                 else {
                     Index index = table.getIndex(indexName);

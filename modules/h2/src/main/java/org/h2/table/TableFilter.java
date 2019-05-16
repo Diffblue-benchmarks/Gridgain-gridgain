@@ -319,6 +319,9 @@ public class TableFilter implements ColumnResolver {
      * can not be used, and optimize the conditions.
      */
     public void prepare() {
+        if (index.getClass() == HashJoinIndex.class)
+            ((HashJoinIndex)index).prepare(session, indexConditions);
+
         // forget all unused index conditions
         // the indexConditions list may be modified here
         for (int i = 0; i < indexConditions.size(); i++) {
@@ -352,9 +355,6 @@ public class TableFilter implements ColumnResolver {
         if (joinCondition != null) {
             joinCondition = joinCondition.optimize(session);
         }
-
-        if (index.getClass() == HashJoinIndex.class)
-            ((HashJoinIndex)index).prepare(session, indexConditions);
     }
 
     /**
