@@ -108,8 +108,9 @@ public class HashJoinIndex extends BaseIndex {
      * @return true if Hash JOIN index is applicable for specifid masks: there is EQUALITY for only one column.
      */
     public static boolean isApplicable(Session ses, Table tbl, int[] masks, IndexHints indexHints) {
-        // TODO: add check the table's size
-        return indexHints != null
+        return
+            tbl.getRowCountApproximation() < ses.getHashJoinMaxTableSize()
+            && indexHints != null
             && indexHints.getAllowedIndexes() != null
             && indexHints.getAllowedIndexes().size() == 1
             && indexHints.getAllowedIndexes().contains(HASH_JOIN);
