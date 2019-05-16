@@ -1599,7 +1599,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
                     try {
                         if (timeout > 0) {
-                            if (!checkpointLock.tryLock(timeout - (U.currentTimeMillis() - start),
+                            if (!checkpointLock.tryReadLock(timeout - (U.currentTimeMillis() - start),
                                 TimeUnit.MILLISECONDS))
                                 failCheckpointReadLock();
                         }
@@ -5906,6 +5906,9 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         private final IgniteLogger log;
 
         /** */
+        private long cpLockWaitThreshold;
+
+        /** */
         private CPLockWrapper(GridKernalContext kctx) {
             IgniteConfiguration cfg = kctx.config();
 
@@ -5913,7 +5916,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
             long checkpointFreq = cfg.getDataStorageConfiguration().getCheckpointFrequency();
 
-            long cpLockWaitThreshold = Math.min(checkpointFreq / 2, 5_000);
+            cpLockWaitThreshold = Math.min(checkpointFreq / 2, 5_000);
 
             kctx.timeout().schedule(new Runnable() {
                 @Override public void run() {
@@ -5922,7 +5925,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                             GridStringBuilder sb = new GridStringBuilder();
 
                             sb.a("Checkpoint writeLock can`t be aquired more than " + cpLockWaitThreshold + " ms." + U.nl());
-                            sb.a("Checkpoint readLock holders:" + U.nl());
+                            sb.a("Checkpoint readLock probably holders:" + U.nl());
 
                             readHolders.forEach(t -> U.printStackTrace(t, sb));
 
@@ -5931,6 +5934,11 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                     }
                 }
             }, cpLockWaitThreshold, cpLockWaitThreshold);
+        }
+
+        /** */
+        long lockWaitThreshold() {
+            return cpLockWaitThreshold;
         }
 
         /** */
@@ -5949,7 +5957,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         }
 
         /** */
-        public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
+        public boolean tryReadLock(long timeout, TimeUnit unit) throws InterruptedException {
             boolean pr = checkpointLock.readLock().tryLock(timeout, unit);
 
             if (pr)

@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
 import org.apache.ignite.Ignite;
 import org.apache.ignite.configuration.DataRegionConfiguration;
 import org.apache.ignite.configuration.DataStorageConfiguration;
@@ -30,6 +31,8 @@ import org.apache.ignite.failure.FailureType;
 import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.IgniteInternalFuture;
 import org.apache.ignite.testframework.GridTestUtils;
+import org.apache.ignite.testframework.ListeningTestLogger;
+import org.apache.ignite.testframework.LogListener;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
 import org.junit.After;
 import org.junit.Before;
@@ -40,6 +43,9 @@ import org.junit.Test;
  * Tests critical failure handling on checkpoint read lock acquisition errors.
  */
 public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
+    /** */
+    private ListeningTestLogger testLog;
+
     /** */
     private static final AbstractFailureHandler FAILURE_HND = new AbstractFailureHandler() {
         @Override protected boolean handle(Ignite ignite, FailureContext failureCtx) {
@@ -58,13 +64,21 @@ public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
 
     /** {@inheritDoc} */
     @Override protected IgniteConfiguration getConfiguration(String igniteInstanceName) throws Exception {
-        return super.getConfiguration(igniteInstanceName)
+        IgniteConfiguration cfg = super.getConfiguration(igniteInstanceName)
             .setFailureHandler(FAILURE_HND)
             .setDataStorageConfiguration(new DataStorageConfiguration()
                 .setDefaultDataRegionConfiguration(new DataRegionConfiguration()
                     .setPersistenceEnabled(true))
                 .setCheckpointFrequency(Integer.MAX_VALUE)
                 .setCheckpointReadLockTimeout(1));
+
+        if (testLog != null) {
+            cfg.setGridLogger(testLog);
+
+            testLog = null;
+        }
+
+        return cfg;
     }
 
     /**
@@ -141,37 +155,56 @@ public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
      */
     @Test
     public void testFailureTypeOnTimeout1() throws Exception {
+        CountDownLatch canRelease = new CountDownLatch(1);
+
+        ListeningTestLogger testLog = new ListeningTestLogger(false, log);
+
+        LogListener lsnr = LogListener.matches("Checkpoint writeLock can`t be aquired more than").build();
+
+        testLog.registerListener(lsnr);
+
         IgniteEx ig = startGrid(0);
 
         ig.cluster().active(true);
 
         GridCacheDatabaseSharedManager db = (GridCacheDatabaseSharedManager)ig.context().cache().context().database();
 
-        IgniteInternalFuture acquireWriteLock = GridTestUtils.runAsync(() -> {
+        GridTestUtils.runAsync(() -> {
             db.checkpointLock.readLock();
 
             try {
-                doSleep(Long.MAX_VALUE);
+                canRelease.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                db.checkpointLock.readUnlock();
+            }
+        }, "async-runnable-runner-1");
+
+        GridTestUtils.runAsync(() -> {
+            db.checkpointLock.readLock();
+
+            try {
+                canRelease.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
             finally {
                 db.checkpointLock.readUnlock();
             }
+        }, "async-runnable-runner-2");
+
+        assertFalse(db.checkpointLock.isHeldByCurrentThread());
+
+        GridTestUtils.runAsync(() -> {
+            db.checkpointLock.writeLock();
+
+            db.checkpointLock.writeUnlock();
         });
 
-        IgniteInternalFuture acquireWriteLock1 = GridTestUtils.runAsync(() -> {
-            db.checkpointLock.readLock();
+        GridTestUtils.waitForCondition(lsnr::check, db.checkpointLock.lockWaitThreshold() + 1000);
 
-            try {
-                doSleep(Long.MAX_VALUE);
-            }
-            finally {
-                db.checkpointLock.readUnlock();
-            }
-        });
-
-        GridTestUtils.waitForCondition(() -> db.checkpointLock.isHeldByCurrentThread(), 5000);
-
-        db.checkpointLock.writeLock();
+        canRelease.countDown();
 
         stopGrid(0);
     }
