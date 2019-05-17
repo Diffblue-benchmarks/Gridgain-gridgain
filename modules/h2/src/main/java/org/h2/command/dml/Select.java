@@ -1996,12 +1996,12 @@ public class Select extends Query {
 
 
     /**
-     * Reset the batch-join after the query result is closed.
+     * Reset the hash index is used for join after the query result is closed.
      */
     void clearHashJoinIndexAfterQuery() {
         topTableFilter.visit(new TableFilterVisitor() {
             @Override public void accept(TableFilter f) {
-                if (f.getIndex().getClass() == HashJoinIndex.class)
+                if (f != null && f.getIndex() != null && f.getIndex().getClass() == HashJoinIndex.class)
                     ((HashJoinIndex)f.getIndex()).clearHashTable(session);
             }
         });
