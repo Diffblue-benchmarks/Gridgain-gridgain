@@ -222,7 +222,7 @@ public class HashJoinIndex extends BaseIndex {
 
     /** {@inheritDoc} */
     @Override public String getPlanSQL() {
-        // Used by debug print before end of prepare.
+        // Used by debug print before end of prepare phase.
         if (fillFromIndex == null)
             return "HASH_JOIN";
 

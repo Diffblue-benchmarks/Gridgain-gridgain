@@ -210,11 +210,8 @@ public class HashJoinQueryTest extends AbstractIndexingCommonTest {
         for (int i = 0; i < count; ++i) {
             Iterator it = sql(enforceJoinOrder, sql).iterator();
 
-            int cnt = 0;
-            while (it.hasNext()) {
+            while (it.hasNext())
                 it.next();
-                cnt++;
-            }
         }
 
         return (U.currentTimeMillis() - t0) / count;
