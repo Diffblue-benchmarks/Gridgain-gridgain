@@ -5916,7 +5916,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
 
             long checkpointFreq = cfg.getDataStorageConfiguration().getCheckpointFrequency();
 
-            cpLockWaitThreshold = Math.min(checkpointFreq / 2, 5_000);
+            cpLockWaitThreshold = Math.min(Math.max(checkpointFreq / 2, 1_000), 5_000);
 
             kctx.timeout().schedule(new Runnable() {
                 @Override public void run() {
