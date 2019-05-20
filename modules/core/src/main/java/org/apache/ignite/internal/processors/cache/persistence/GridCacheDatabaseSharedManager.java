@@ -5894,7 +5894,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
     /** */
     static class CPLockWrapper {
         /** */
-        private static final ReentrantReadWriteLock checkpointLock = new ReentrantReadWriteLock();
+        private final ReentrantReadWriteLock checkpointLock = new ReentrantReadWriteLock();
 
         /** */
         private static volatile boolean wLockActive;
