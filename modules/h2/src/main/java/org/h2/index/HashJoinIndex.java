@@ -168,11 +168,12 @@ public class HashJoinIndex extends BaseIndex {
 
             int mask = masks[index];
 
-            if (mask != 0 && ((mask & IndexCondition.EQUALITY) == IndexCondition.EQUALITY))
+            if (mask != 0 && ((mask & IndexCondition.EQUALITY) == IndexCondition.EQUALITY)) {
                 if (cost > 0)
                     cost -= 2;
                 else
                     cost = 2 + table.getRowCountApproximation();
+            }
         }
 
         return cost > 0 ? cost : Long.MAX_VALUE;
