@@ -36,6 +36,7 @@ import org.h2.result.SortOrder;
 import org.h2.table.Column;
 import org.h2.table.IndexColumn;
 import org.h2.table.IndexHints;
+import org.h2.table.PlanItem;
 import org.h2.table.Table;
 import org.h2.table.TableFilter;
 import org.h2.value.Value;
@@ -64,14 +65,11 @@ public class HashJoinIndex extends BaseIndex {
     /** Index to fill hash table. */
     private Index fillFromIndex;
 
-    /** The first row to open cursor on #fillFromIndex. */
-    private SearchRow first;
-
-    /** The last row to open cursor on #fillFromIndex. */
-    private SearchRow last ;
-
     /** Conditions. */
     private Set<ConditionChecker> condsCheckers;
+
+    /** Filter index condition. */
+    private ArrayList<IndexCondition> filterIdxCond;
 
     /**
      * @param table Table to build temporary hash join index.
@@ -275,13 +273,13 @@ public class HashJoinIndex extends BaseIndex {
 
         List<Integer> ids = new ArrayList<>();
 
-        ArrayList<IndexCondition> filterIndexCond = new ArrayList<>();
+        filterIdxCond = new ArrayList<>();
 
         for (IndexCondition idxCond : indexConditions) {
             if (isEquiJoinCondition(idxCond))
                 ids.add(idxCond.getColumn().getColumnId());
-            else
-                filterIndexCond.add(idxCond);
+            else if (!idxCond.isAlwaysFalse())
+                filterIdxCond.add(idxCond);
         }
 
         colIds = new int[ids.size()];
@@ -296,10 +294,10 @@ public class HashJoinIndex extends BaseIndex {
                 || table.getColumn(colIds[i]).getType().getValueType() == Value.STRING_IGNORECASE;
         }
 
-         prepareFillFromIndex(ses, filterIndexCond);
+        prepareFillFromIndex(ses);
 
         // Prepare filter condition.
-        for (IndexCondition idxCond : filterIndexCond) {
+        for (IndexCondition idxCond : filterIdxCond) {
             ConditionChecker checker = ConditionChecker.create(ses, idxCond);
 
             if (condsCheckers == null && checker != null)
@@ -312,12 +310,60 @@ public class HashJoinIndex extends BaseIndex {
 
     /**
      * @param ses Session.
-     * @param indexConditions Index conditions to choose hte best index to fill hash table.
      */
-    private void prepareFillFromIndex(Session ses, ArrayList<IndexCondition> indexConditions) {
-        fillFromIndex = table.getScanIndex(ses);
-        first = null;
-        last = null;
+    private void prepareFillFromIndex(Session ses) {
+        int masks[] = IndexCondition.createMasksForTable(table, filterIdxCond);
+
+        PlanItem plan = table.getBestPlanItem(ses, masks, null, 0, null, null, false);
+
+        fillFromIndex = plan.getIndex();
+
+    }
+
+    /**
+     * @param ses Session.
+     */
+    private Cursor openCursorToFillHashTable(Session ses) {
+        if (fillFromIndex.isFindUsingFullTableScan())
+            return fillFromIndex.find(ses, null, null);
+
+        SearchRow first = null;
+        SearchRow last = null;
+
+        for (IndexCondition condition : filterIdxCond) {
+            // If index can perform only full table scan do not try to use it for regular
+            // lookups, each such lookup will perform an own table scan.
+            Column column = condition.getColumn();
+
+            if (condition.getCompareType() != Comparison.IN_LIST && condition.getCompareType() != Comparison.IN_QUERY) {
+                Value v = condition.getCurrentValue(ses);
+
+                boolean isStart = condition.isStart();
+                boolean isEnd = condition.isEnd();
+
+                int columnId = column.getColumnId();
+
+                if (columnId != SearchRow.ROWID_INDEX) {
+                    IndexColumn idxCol = indexColumns[columnId];
+                    if (idxCol != null && (idxCol.sortType & SortOrder.DESCENDING) != 0) {
+                        // if the index column is sorted the other way, we swap
+                        // end and start NULLS_FIRST / NULLS_LAST is not a
+                        // problem, as nulls never match anyway
+                        boolean temp = isStart;
+                        isStart = isEnd;
+                        isEnd = temp;
+                    }
+                }
+
+                if (isStart)
+                    first = table.getSearchRow(first, columnId, v, true);
+
+                if (isEnd)
+                    last = table.getSearchRow(last, columnId, v, false);
+            }
+        }
+
+        return fillFromIndex.find(ses, first, last);
     }
 
 
@@ -332,7 +378,7 @@ public class HashJoinIndex extends BaseIndex {
                 c.calculateValue(ses);
         }
 
-        Cursor cur = fillFromIndex.find(ses, first, last);
+        Cursor cur = openCursorToFillHashTable(ses);
 
         hashTbl = new HashMap<>();
 

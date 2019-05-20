@@ -1297,4 +1297,46 @@ public abstract class Table extends SchemaObjectBase {
     public boolean isTableExpression() {
         return tableExpression;
     }
+
+    /**
+     * Return search row by table template.
+     * @param row Partial fill search row.
+     * @param columnId Column id to fill.
+     * @param v Value to
+     * @param max Max flag.
+     * @return Search row.
+     */
+    public SearchRow getSearchRow(SearchRow row, int columnId, Value v, boolean max) {
+        if (row == null)
+            row = getTemplateRow();
+        else
+            v = getMax(row.getValue(columnId), v, max);
+
+        if (columnId == SearchRow.ROWID_INDEX)
+            row.setKey(v.getLong());
+        else
+            row.setValue(columnId, v);
+
+        return row;
+    }
+
+    private Value getMax(Value a, Value b, boolean bigger) {
+        if (a == null)
+            return b;
+        else if (b == null)
+            return a;
+
+        // IS NULL must be checked later
+        if (a == ValueNull.INSTANCE)
+            return b;
+        else if (b == ValueNull.INSTANCE)
+            return a;
+
+        int comp = database.compare(a, b);
+
+        if (comp == 0)
+            return a;
+
+        return (comp > 0) == bigger ? a : b;
+    }
 }

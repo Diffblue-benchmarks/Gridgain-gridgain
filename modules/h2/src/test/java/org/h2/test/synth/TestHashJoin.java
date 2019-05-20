@@ -49,6 +49,7 @@ public class TestHashJoin {
 
         sql("CREATE TABLE B(ID INT PRIMARY KEY, val0 int, val1 VARCHAR(20), A_JID INT, val2 BOOLEAN)");
         sql("CREATE INDEX B_A_JID ON B(A_JID)");
+        sql("CREATE INDEX B_VAL0 ON B(VAL0)");
 
         for (int i = 0; i < RIGHT_CNT; ++i)
             sql("INSERT INTO B (ID, A_JID, val0) VALUES(?, ?, ?)",
@@ -90,7 +91,7 @@ public class TestHashJoin {
     public void testHashJoinFilterCondition() throws Exception {
         assertTrue(sql("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) " +
             "WHERE A.JID = B.A_JID AND B.val0 > ?", 5)
-            .contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID], filters=[VAL0 > ?1]]"));
+            .contains("HASH_JOIN [fillFromIndex=B_VAL0, hashedCols=[A_JID], filters=[VAL0 > ?1]]"));
     }
 
     /**

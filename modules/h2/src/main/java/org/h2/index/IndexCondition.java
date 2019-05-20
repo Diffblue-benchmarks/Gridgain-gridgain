@@ -18,6 +18,7 @@ import org.h2.expression.condition.Comparison;
 import org.h2.message.DbException;
 import org.h2.result.ResultInterface;
 import org.h2.table.Column;
+import org.h2.table.Table;
 import org.h2.table.TableType;
 import org.h2.value.Value;
 
@@ -392,6 +393,33 @@ public class IndexCondition {
             .append(", expressionList=").append(expressionList)
             .append(", expressionQuery=").append(expressionQuery).toString();
     }
+
+    /**
+     * @param tbl Table.
+     * @param idxConditions Index conditions.
+     * @return Columns' masks.
+     */
+    public static int[] createMasksForTable(Table tbl,  ArrayList<IndexCondition> idxConditions) {
+        int len = tbl.getColumns().length;
+
+        int[] masks = new int[len];
+
+        for (IndexCondition condition : idxConditions) {
+            if (condition.isEvaluatable()) {
+                if (condition.isAlwaysFalse()) {
+                    masks = null;
+                    break;
+                }
+                int id = condition.getColumn().getColumnId();
+                if (id >= 0) {
+                    masks[id] |= condition.getMask(idxConditions);
+                }
+            }
+        }
+
+        return masks;
+    }
+
 
     private static StringBuilder compareTypeToString(StringBuilder builder, int i) {
         boolean f = false;

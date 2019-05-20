@@ -200,11 +200,12 @@ public class TableFilter implements ColumnResolver {
      */
     public PlanItem getBestPlanItem(Session s, TableFilter[] filters, int filter,
             AllColumnsForPlan allColumnsSet) {
-        PlanItem item1 = null;
         SortOrder sortOrder = null;
         if (select != null) {
             sortOrder = select.getSortOrder();
         }
+
+        PlanItem item1 = null;
         if (indexConditions.isEmpty()) {
             item1 = new PlanItem();
             item1.setIndex(table.getScanIndex(s, null, filters, filter,
@@ -212,20 +213,8 @@ public class TableFilter implements ColumnResolver {
             item1.cost = item1.getIndex().getCost(s, null, filters, filter,
                     sortOrder, allColumnsSet);
         }
-        int len = table.getColumns().length;
-        int[] masks = new int[len];
-        for (IndexCondition condition : indexConditions) {
-            if (condition.isEvaluatable()) {
-                if (condition.isAlwaysFalse()) {
-                    masks = null;
-                    break;
-                }
-                int id = condition.getColumn().getColumnId();
-                if (id >= 0) {
-                    masks[id] |= condition.getMask(indexConditions);
-                }
-            }
-        }
+
+        int[] masks = IndexCondition.createMasksForTable(table, indexConditions);
 
         PlanItem item = table.getBestPlanItem(s, masks, filters, filter, sortOrder, allColumnsSet, isEquiJoined());
         item.setMasks(masks);
