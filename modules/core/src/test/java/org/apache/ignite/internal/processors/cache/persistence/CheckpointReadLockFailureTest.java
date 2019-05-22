@@ -154,7 +154,7 @@ public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
      * @throws Exception If failed.
      */
     @Test
-    public void testFailureTypeOnTimeout1() throws Exception {
+    public void testPrintCpRLockHolder() throws Exception {
         CountDownLatch canRelease = new CountDownLatch(1);
 
         ListeningTestLogger testLog = new ListeningTestLogger(false, log);
@@ -174,9 +174,11 @@ public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
 
             try {
                 canRelease.await();
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 e.printStackTrace();
-            } finally {
+            }
+            finally {
                 db.checkpointLock.readUnlock();
             }
         }, "async-runnable-runner-1");
@@ -186,7 +188,8 @@ public class CheckpointReadLockFailureTest extends GridCommonAbstractTest {
 
             try {
                 canRelease.await();
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 e.printStackTrace();
             }
             finally {

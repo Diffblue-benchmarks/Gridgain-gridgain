@@ -5900,7 +5900,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         private static volatile boolean wLockActive;
 
         /** */
-        private static Set<Long> readHolders = new GridConcurrentHashSet<>();
+        private final Map<Long, Boolean> readHolders = new ConcurrentHashMap<>();
 
         /** */
         private final IgniteLogger log;
@@ -5927,7 +5927,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                             sb.a("Checkpoint writeLock can`t be aquired more than " + cpLockWaitThreshold + " ms." + U.nl());
                             sb.a("Checkpoint readLock probably holders:" + U.nl());
 
-                            readHolders.forEach(t -> U.printStackTrace(t, sb));
+                            readHolders.forEach((t, p) -> {if (p) U.printStackTrace(t, sb);});
 
                             U.warn(log, sb.toString());
                         }
@@ -5946,14 +5946,14 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         void readLock() {
             checkpointLock.readLock().lock();
 
-            readHolders.add(Thread.currentThread().getId());
+            readHolders.put(Thread.currentThread().getId(), Boolean.TRUE);
         }
 
         /** */
         void readUnlock() {
             checkpointLock.readLock().unlock();
 
-            readHolders.remove(Thread.currentThread().getId());
+            readHolders.put(Thread.currentThread().getId(), Boolean.FALSE);
         }
 
         /** */
@@ -5961,7 +5961,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
             boolean pr = checkpointLock.readLock().tryLock(timeout, unit);
 
             if (pr)
-                readHolders.add(Thread.currentThread().getId());
+                readHolders.put(Thread.currentThread().getId(), Boolean.TRUE);
 
             return pr;
         }
