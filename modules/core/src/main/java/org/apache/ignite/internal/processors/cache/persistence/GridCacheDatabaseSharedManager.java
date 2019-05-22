@@ -5900,7 +5900,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         private static volatile boolean wLockActive;
 
         /** */
-        private final Map<Long, Boolean> readHolders = new ConcurrentHashMap<>();
+        private static Set<Long> readHolders = new GridConcurrentHashSet<>();
 
         /** */
         private final IgniteLogger log;
@@ -5927,7 +5927,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
                             sb.a("Checkpoint writeLock can`t be aquired more than " + cpLockWaitThreshold + " ms." + U.nl());
                             sb.a("Checkpoint readLock probably holders:" + U.nl());
 
-                            readHolders.forEach((t, p) -> {if (p) U.printStackTrace(t, sb);});
+                            readHolders.forEach(t -> U.printStackTrace(t, sb));
 
                             U.warn(log, sb.toString());
                         }
@@ -5946,14 +5946,14 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
         void readLock() {
             checkpointLock.readLock().lock();
 
-            readHolders.put(Thread.currentThread().getId(), Boolean.TRUE);
+            readHolders.add(Thread.currentThread().getId());
         }
 
         /** */
         void readUnlock() {
             checkpointLock.readLock().unlock();
 
-            readHolders.put(Thread.currentThread().getId(), Boolean.FALSE);
+            readHolders.remove(Thread.currentThread().getId());
         }
 
         /** */
@@ -5961,7 +5961,7 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
             boolean pr = checkpointLock.readLock().tryLock(timeout, unit);
 
             if (pr)
-                readHolders.put(Thread.currentThread().getId(), Boolean.TRUE);
+                readHolders.add(Thread.currentThread().getId());
 
             return pr;
         }
@@ -5972,6 +5972,8 @@ public class GridCacheDatabaseSharedManager extends IgniteCacheDatabaseSharedMan
             wLockActive = true;
 
             checkpointLock.writeLock().lock();
+
+            readHolders.clear();
         }
 
         /** */
