@@ -37,30 +37,41 @@ public class TestHashJoin {
     public static void init() throws SQLException {
         connection = DriverManager.getConnection("jdbc:h2:mem:hashjoin");
 
-        sql("SET HASH_JOIN_ENABLE 1");
+        sqlStr("SET HASH_JOIN_ENABLE 1");
 
-        sql("DROP TABLE IF EXISTS A");
-        sql("DROP TABLE IF EXISTS B");
+        sqlStr("DROP TABLE IF EXISTS A");
+        sqlStr("DROP TABLE IF EXISTS B");
 
-        sql("CREATE TABLE A (ID INT PRIMARY KEY, JID INT)");
+        sqlStr("CREATE TABLE A (ID INT PRIMARY KEY, JID INT)");
 
         for (int i = 0; i < LEFT_CNT; ++i)
-            sql("INSERT INTO A VALUES(?, ?)", i, i % 3 == 0 ? null : i);
+            sqlStr("INSERT INTO A VALUES(?, ?)", i, i % 3 == 0 ? null : i);
 
-        sql("CREATE TABLE B(ID INT PRIMARY KEY, val0 int, val1 VARCHAR(20), A_JID INT, val2 BOOLEAN)");
-        sql("CREATE INDEX B_A_JID ON B(A_JID)");
-        sql("CREATE INDEX B_VAL0 ON B(VAL0)");
+        sqlStr("CREATE TABLE B(ID INT PRIMARY KEY, val0 int, val1 VARCHAR(20), A_JID INT, val2 BOOLEAN)");
+        sqlStr("CREATE INDEX B_A_JID ON B(A_JID)");
+        sqlStr("CREATE INDEX B_VAL0 ON B(VAL0)");
+
+        sqlStr("CREATE TABLE C(ID INT PRIMARY KEY, val0 int, val1 VARCHAR(20), A_JID INT, val2 BOOLEAN)");
+        sqlStr("CREATE INDEX C_A_JID ON C(A_JID)");
+        sqlStr("CREATE INDEX C_VAL0 ON C(VAL0)");
+
 
         for (int i = 0; i < RIGHT_CNT; ++i)
-            sql("INSERT INTO B (ID, A_JID, val0) VALUES(?, ?, ?)",
+            sqlStr("INSERT INTO B (ID, A_JID, val0) VALUES(?, ?, ?)",
                 i,
                 i % 4 == 0 ? null : i,
                 i == 0 ? null : i % 10);
 
-        sql("INSERT INTO B (ID, A_JID, val0, val1, val2) VALUES(?, ?, ?, ?, ?)",
+        sqlStr("INSERT INTO B (ID, A_JID, val0, val1, val2) VALUES(?, ?, ?, ?, ?)",
             RIGHT_CNT,
             RIGHT_CNT % 4,
             null, null, null);
+
+        for (int i = 0; i < RIGHT_CNT; ++i)
+            sqlStr("INSERT INTO C (ID, A_JID, val0) VALUES(?, ?, ?)",
+                i,
+                i % 4 == 0 ? null : i,
+                i == 0 ? null : i % 10);
     }
 
     /**
@@ -68,8 +79,8 @@ public class TestHashJoin {
      */
     @AfterClass
     public static void cleanup() throws SQLException {
-        sql("DROP TABLE IF EXISTS A");
-        sql("DROP TABLE IF EXISTS B");
+        sqlStr("DROP TABLE IF EXISTS A");
+        sqlStr("DROP TABLE IF EXISTS B");
 
         connection.close();
     }
@@ -80,7 +91,7 @@ public class TestHashJoin {
      */
     @Test
     public void testHashJoin() throws Exception {
-        assertTrue(sql("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) WHERE A.JID=B.A_JID")
+        assertTrue(sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) WHERE A.JID=B.A_JID")
             .contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]]"));
     }
 
@@ -89,7 +100,7 @@ public class TestHashJoin {
      */
     @Test
     public void testHashJoinFilterCondition() throws Exception {
-        assertTrue(sql("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) " +
+        assertTrue(sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) " +
             "WHERE A.JID = B.A_JID AND B.val0 > ?", 5)
             .contains("HASH_JOIN [fillFromIndex=B_VAL0, hashedCols=[A_JID], filters=[VAL0 > ?1]]"));
     }
@@ -99,9 +110,9 @@ public class TestHashJoin {
      */
     @Test
     public void testNotHashJoin() throws Exception {
-        assertFalse(sql("EXPLAIN SELECT * FROM A where A.JID IN (NULL, NULL)").contains("HASH_JOIN"));
-        assertFalse(sql("EXPLAIN SELECT * FROM A, B WHERE A.JID > B.A_JID").contains("HASH_JOIN"));
-        assertFalse(sql("EXPLAIN SELECT * FROM A, B WHERE A.JID > B.A_JID AND B.A_JID = ?", 5)
+        assertFalse(sqlStr("EXPLAIN SELECT * FROM A where A.JID IN (NULL, NULL)").contains("HASH_JOIN"));
+        assertFalse(sqlStr("EXPLAIN SELECT * FROM A, B WHERE A.JID > B.A_JID").contains("HASH_JOIN"));
+        assertFalse(sqlStr("EXPLAIN SELECT * FROM A, B WHERE A.JID > B.A_JID AND B.A_JID = ?", 5)
             .contains("HASH_JOIN"));
     }
 
@@ -111,7 +122,7 @@ public class TestHashJoin {
      * @throws SQLException On error.
      * @return Result set or updated count are printed to string.
      */
-    private static String sql(String sql, Object... params) throws SQLException {
+    private static String sqlStr(String sql, Object... params) throws SQLException {
         try (PreparedStatement prep = connection.prepareStatement(sql)) {
             for (int j = 0; j < params.length; j++)
                 prep.setObject(j + 1, params[j]);

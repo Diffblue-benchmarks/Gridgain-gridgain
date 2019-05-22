@@ -167,10 +167,16 @@ public class HashJoinIndex extends BaseIndex {
             int mask = masks[index];
 
             if (mask != 0 && ((mask & IndexCondition.EQUALITY) == IndexCondition.EQUALITY)) {
-                if (cost > 0)
+                if (cost > 0) {
+                    // Decrease cost for each equality condition to choose the mask with max EQ condition:
+                    // e.g. SELECT A, B where A.id0=b.id0 AND A.id1=B.id1
+                    // the mask with both condition must be win!
                     cost -= 2;
-                else
-                    cost = 2 + table.getRowCountApproximation();
+                }
+                else {
+                    // base cost of temporary hash index.
+                    cost = 2 * columns.length + table.getRowCountApproximation();
+                }
             }
         }
 
@@ -323,6 +329,7 @@ public class HashJoinIndex extends BaseIndex {
 
     /**
      * @param ses Session.
+     * @return Cursor to fill hash table.
      */
     private Cursor openCursorToFillHashTable(Session ses) {
         if (fillFromIndex.isFindUsingFullTableScan())
@@ -331,10 +338,18 @@ public class HashJoinIndex extends BaseIndex {
         SearchRow first = null;
         SearchRow last = null;
 
+        boolean colIndexed[] = new boolean[table.getColumns().length];
+
+        for (Column c : fillFromIndex.getColumns())
+            colIndexed[c.getColumnId()] = true;
+
         for (IndexCondition condition : filterIdxCond) {
             // If index can perform only full table scan do not try to use it for regular
             // lookups, each such lookup will perform an own table scan.
             Column column = condition.getColumn();
+
+            if (!colIndexed[column.getColumnId()])
+                continue;
 
             if (condition.getCompareType() != Comparison.IN_LIST && condition.getCompareType() != Comparison.IN_QUERY) {
                 Value v = condition.getCurrentValue(ses);
