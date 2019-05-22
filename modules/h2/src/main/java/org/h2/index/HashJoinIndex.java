@@ -215,6 +215,10 @@ public class HashJoinIndex extends BaseIndex {
 
         Value key = hashKey(first);
 
+        // Because index is used only for EQUI-JOIN
+        if (key.containsNull())
+            return Cursor.EMPTY;
+
         List<Row> res = hashTbl.get(key);
 
         if (res == null)
@@ -283,8 +287,10 @@ public class HashJoinIndex extends BaseIndex {
         filterIdxCond = new ArrayList<>();
 
         for (IndexCondition idxCond : indexConditions) {
-            if (isEquiJoinCondition(idxCond))
-                ids.add(idxCond.getColumn().getColumnId());
+            if (isEquiJoinCondition(idxCond)) {
+                if (!ids.contains(idxCond.getColumn().getColumnId()))
+                    ids.add(idxCond.getColumn().getColumnId());
+            }
             else if (!idxCond.isAlwaysFalse())
                 filterIdxCond.add(idxCond);
         }
@@ -403,6 +409,10 @@ public class HashJoinIndex extends BaseIndex {
 
             if (checkConditions(ses, r)) {
                 Value key = hashKey(r);
+
+                // Because index is used only for EQUI-JOIN
+                if (key.containsNull())
+                    continue;
 
                 List<Row> keyRows = hashTbl.get(key);
 

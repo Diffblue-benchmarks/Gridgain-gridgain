@@ -91,8 +91,39 @@ public class TestHashJoin {
      */
     @Test
     public void testHashJoin() throws Exception {
-        assertTrue(sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) WHERE A.JID=B.A_JID")
-            .contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]]"));
+        String plan = sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN) WHERE A.JID=B.A_JID");
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]]"));
+
+        plan = sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN), C USE INDEX (HASH_JOIN) " +
+            "WHERE A.JID=B.A_JID AND A.JID=C.A_JID");
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]]"));
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=C_DATA, hashedCols=[A_JID]]"));
+
+        plan = sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN), C " +
+            "WHERE A.JID=B.A_JID AND A.JID=C.A_JID");
+        assertTrue(plan.contains("PUBLIC.C_A_JID: A_JID = A.JID"));
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]]"));
+
+        plan = sqlStr("EXPLAIN SELECT * FROM A, B, C USE INDEX (HASH_JOIN) " +
+            "WHERE A.JID=B.A_JID AND A.JID=C.A_JID");
+        assertTrue(plan.contains("PUBLIC.B_A_JID: A_JID = A.JID"));
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=C_DATA, hashedCols=[A_JID]]"));
+
+        plan = sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN), C USE INDEX (HASH_JOIN) " +
+            "WHERE A.JID=B.A_JID AND B.ID=C.ID");
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]"));
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=C_DATA, hashedCols=[ID]]"));
+
+
+        plan = sqlStr("EXPLAIN SELECT * FROM A, B USE INDEX (HASH_JOIN), C " +
+            "WHERE A.JID=B.A_JID AND B.VAL0=C.VAL0");
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=B_DATA, hashedCols=[A_JID]"));
+        assertTrue(plan.contains("PUBLIC.C_VAL0: VAL0 = B.VAL0"));
+
+        plan = sqlStr("EXPLAIN SELECT * FROM A, B, C USE INDEX (HASH_JOIN) " +
+            "WHERE A.JID=B.A_JID AND B.VAL0=C.VAL0");
+        assertTrue(plan.contains("PUBLIC.B_A_JID: A_JID = A.JID"));
+        assertTrue(plan.contains("HASH_JOIN [fillFromIndex=C_DATA, hashedCols=[VAL0]]"));
     }
 
     /**
